@@ -1,0 +1,6 @@
+{
+  "name": "PARTA — Engineering Portfolio Platform",
+  "description": "Personal engineering portfolio and system architecture showcase for I Nyoman Parta Yasa, Backend Engineer based in Bali, Indonesia.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
