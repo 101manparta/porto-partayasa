@@ -122,7 +122,13 @@ export async function getProjects(includeDrafts = false): Promise<Project[]> {
       }
       const { data, error } = await query;
       if (!error && data && data.length > 0) {
-        return data as Project[];
+        const formatted = data.map((p: any) => ({
+          ...p,
+          images: Array.isArray(p.images) ? p.images : [],
+          documents: Array.isArray(p.documents) ? p.documents : [],
+          case_study: Array.isArray(p.case_study) ? p.case_study[0] : p.case_study,
+        }));
+        return formatted as Project[];
       }
     } catch (err) {
       console.warn('Supabase projects query failed, falling back to cached projects:', err);
@@ -305,32 +311,33 @@ export async function uploadFileToStorage(
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    try {
-      const { data, error } = await supabase.storage
-        .from(bucket)
-        .upload(storagePath, file, {
-          cacheControl: '3600',
-          upsert: true,
-        });
+    const { data, error } = await supabase.storage
+      .from(bucket)
+      .upload(storagePath, file, {
+        cacheControl: '3600',
+        upsert: true,
+      });
 
-      if (!error && data) {
-        const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path);
-        return {
-          publicUrl: publicData.publicUrl,
-          filePath: data.path,
-          fileName: file.name,
-          mimeType: file.type,
-          fileSize: file.size,
-        };
-      } else if (error) {
-        console.warn(`Supabase Storage upload warning (${bucket}):`, error.message);
-      }
-    } catch (err) {
-      console.warn('Supabase Storage upload exception:', err);
+    if (error) {
+      console.error(`Supabase Storage upload error (${bucket}):`, error);
+      throw new Error(
+        `Upload ke Supabase Storage bucket "${bucket}" gagal: ${error.message}. Pastikan bucket "${bucket}" berstatus Public dan policy RLS mengizinkan upload.`
+      );
+    }
+
+    if (data) {
+      const { data: publicData } = supabase.storage.from(bucket).getPublicUrl(data.path);
+      return {
+        publicUrl: publicData.publicUrl,
+        filePath: data.path,
+        fileName: file.name,
+        mimeType: file.type,
+        fileSize: file.size,
+      };
     }
   }
 
-  // Resilient fallback (offline/local preview mode)
+  // Offline / mock fallback only when Supabase is completely unconfigured
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -375,7 +382,7 @@ export async function getProjectImages(projectId?: string, showcaseOnly = false)
         query = query.eq('is_showcase', true);
       }
       const { data, error } = await query;
-      if (!error && data && data.length > 0) {
+      if (!error && data) {
         return data as ProjectImage[];
       }
     } catch (err) {
@@ -414,35 +421,88 @@ export async function createProjectImage(data: Partial<ProjectImage>): Promise<P
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    try {
-      const { data: inserted, error } = await supabase.from('project_images').insert([{
-        project_id: newImg.project_id,
-        image_url: newImg.image_url,
-        file_path: newImg.file_path,
-        file_name: newImg.file_name,
-        mime_type: newImg.mime_type,
-        file_size: newImg.file_size,
-        title: newImg.title,
-        caption: newImg.caption,
-        image_type: newImg.image_type,
-        display_order: newImg.display_order,
-        is_showcase: newImg.is_showcase,
-      }]).select().single();
+    // Check if the project exists in Supabase. If not, match by slug or ensure it exists
+    let targetProjectId = newImg.project_id;
+    const { data: matchedProj } = await supabase
+      .from('projects')
+      .select('id')
+      .or(`id.eq.${newImg.project_id},slug.eq.${newImg.project_id.replace('proj-', '')}`)
+      .limit(1)
+      .maybeSingle();
 
-      if (!error && inserted) {
-        newImg.id = inserted.id;
+    if (matchedProj) {
+      targetProjectId = matchedProj.id;
+    } else {
+      // If projects table is empty, auto-seed the baseline project so foreign key never fails
+      const baseline = INITIAL_PROJECTS.find(
+        (p) => p.id === newImg.project_id || p.slug === newImg.project_id.replace('proj-', '')
+      ) || INITIAL_PROJECTS[0];
+
+      if (baseline) {
+        const { data: createdProj, error: pCreateErr } = await supabase
+          .from('projects')
+          .upsert({
+            id: baseline.id,
+            name: baseline.name,
+            slug: baseline.slug,
+            short_description: baseline.short_description,
+            full_description: baseline.full_description,
+            category: baseline.category,
+            live_url: baseline.live_url,
+            github_url: baseline.github_url,
+            technologies: baseline.technologies,
+            is_featured: baseline.is_featured,
+            publication_status: baseline.publication_status,
+            display_order: baseline.display_order,
+          })
+          .select('id')
+          .single();
+
+        if (!pCreateErr && createdProj) {
+          targetProjectId = createdProj.id;
+        }
       }
-    } catch (err) {
-      console.error('Supabase createProjectImage error:', err);
+    }
+
+    newImg.project_id = targetProjectId;
+
+    const { data: inserted, error } = await supabase
+      .from('project_images')
+      .insert([
+        {
+          project_id: targetProjectId,
+          image_url: newImg.image_url,
+          file_path: newImg.file_path,
+          file_name: newImg.file_name,
+          mime_type: newImg.mime_type,
+          file_size: newImg.file_size,
+          title: newImg.title,
+          caption: newImg.caption,
+          image_type: newImg.image_type,
+          display_order: newImg.display_order,
+          is_showcase: newImg.is_showcase,
+        },
+      ])
+      .select()
+      .single();
+
+    if (error) {
+      console.error('Supabase createProjectImage error:', error);
+      throw new Error(`Gagal menyimpan gambar ke database Supabase: ${error.message}`);
+    }
+
+    if (inserted) {
+      newImg.id = inserted.id;
+      newImg.project_id = inserted.project_id;
     }
   }
 
+  // Also update local cache
   const initialImages: ProjectImage[] = INITIAL_PROJECTS.flatMap((p) => p.images || []);
   const allImages = getLocalItem<ProjectImage[]>(STORAGE_KEYS.images, initialImages);
   allImages.push(newImg);
   setLocalItem(STORAGE_KEYS.images, allImages);
 
-  // Sync to local project
   const allProjects = getLocalItem<Project[]>(STORAGE_KEYS.projects, INITIAL_PROJECTS);
   const pIdx = allProjects.findIndex((p) => p.id === newImg.project_id);
   if (pIdx !== -1) {

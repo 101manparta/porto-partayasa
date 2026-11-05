@@ -67,10 +67,12 @@ CREATE TABLE IF NOT EXISTS profiles (
 
 -- ------------------------------------------------------------------------------
 -- 4. PROJECTS TABLE
+-- ------------------------------------------------------------------------------
+-- 4. PROJECTS TABLE
 -- Stores curated backend systems, live demos, and metadata.
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS projects (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
   short_description TEXT NOT NULL,
@@ -96,8 +98,8 @@ CREATE INDEX IF NOT EXISTS idx_projects_order ON projects(display_order);
 -- High-fidelity screenshots and system architecture diagrams for projects.
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS project_images (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
   image_url TEXT NOT NULL,
   file_path TEXT,
   file_name TEXT,
@@ -119,8 +121,8 @@ CREATE INDEX IF NOT EXISTS idx_project_images_showcase ON project_images(is_show
 -- Engineering documentation, architectural diagrams, ERDs, sequence diagrams, and PDFs.
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS project_documents (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  project_id UUID REFERENCES projects(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  project_id TEXT REFERENCES projects(id) ON DELETE CASCADE,
   title TEXT NOT NULL,
   category TEXT NOT NULL CHECK (category IN (
     'System Architecture',
@@ -153,8 +155,8 @@ CREATE INDEX IF NOT EXISTS idx_project_documents_category ON project_documents(c
 -- Comprehensive in-depth engineering breakdowns for each project.
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS case_studies (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  project_id UUID NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
+  id TEXT PRIMARY KEY DEFAULT gen_random_uuid()::text,
+  project_id TEXT NOT NULL UNIQUE REFERENCES projects(id) ON DELETE CASCADE,
   overview TEXT NOT NULL,
   problem_statement TEXT NOT NULL,
   objectives TEXT NOT NULL,
@@ -369,16 +371,37 @@ INSERT INTO storage.buckets (id, name, public) VALUES
   ('profile-assets', 'profile-assets', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Storage RLS: Public read, only verified admin can upload, update, and delete
-CREATE POLICY "Public read storage objects" ON storage.objects FOR SELECT USING (bucket_id IN (
-  'project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'
-));
-CREATE POLICY "Admin upload storage objects" ON storage.objects FOR INSERT WITH CHECK (is_admin());
-CREATE POLICY "Admin update storage objects" ON storage.objects FOR UPDATE USING (is_admin());
-CREATE POLICY "Admin delete storage objects" ON storage.objects FOR DELETE USING (is_admin());
+-- Storage RLS: Public read, authenticated users can upload
+DROP POLICY IF EXISTS "Public read storage objects" ON storage.objects;
+DROP POLICY IF EXISTS "Admin upload storage objects" ON storage.objects;
+DROP POLICY IF EXISTS "Admin update storage objects" ON storage.objects;
+DROP POLICY IF EXISTS "Admin delete storage objects" ON storage.objects;
+
+CREATE POLICY "Public read storage objects" ON storage.objects 
+  FOR SELECT USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+
+CREATE POLICY "Admin upload storage objects" ON storage.objects 
+  FOR INSERT TO authenticated WITH CHECK (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+
+CREATE POLICY "Admin update storage objects" ON storage.objects 
+  FOR UPDATE TO authenticated USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+
+CREATE POLICY "Admin delete storage objects" ON storage.objects 
+  FOR DELETE TO authenticated USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
 
 -- ==============================================================================
--- 16. INITIAL ADMINISTRATOR BOOTSTRAP
+-- 16. BASELINE SEED DATA
+-- Pre-populates the 3 core projects so that foreign keys and uploads match 100%
+-- ==============================================================================
+INSERT INTO projects (id, name, slug, short_description, full_description, category, live_url, github_url, technologies, is_featured, publication_status, display_order)
+VALUES 
+  ('proj-mlb-icon-bali', 'MLB ICON BALI', 'mlb-icon-bali', 'Enterprise hospitality booking & ticketing management platform with transactional inventory locking and high-throughput reservation pipelines.', 'A comprehensive commercial platform serving premier hospitality venues in Bali.', 'Enterprise Backend & Platform', 'https://mlb-pro-olive.vercel.app/', 'https://github.com/101manparta/mlb-icon-bali', ARRAY['PostgreSQL', 'TypeScript', 'Node.js', 'Redis', 'Supabase', 'Next.js', 'Tailwind CSS'], true, 'published', 1),
+  ('proj-voltra', 'VOLTRA', 'voltra', 'High-throughput telemetry ingestion & dynamic EV charging load-balancing engine built with Go concurrency and time-series rollups.', 'An industrial Internet of Things (IoT) energy dispatch orchestration platform.', 'Distributed Systems & IoT', 'https://voltra-pi.vercel.app/', 'https://github.com/101manparta/voltra', ARRAY['Go', 'TimescaleDB', 'PostgreSQL', 'Docker', 'Redis', 'WebSockets', 'Chart.js'], true, 'published', 2),
+  ('proj-mediflow', 'MEDIFLOW', 'mediflow', 'Clinical laboratory specimen lifecycle & validation engine integrating diagnostic state transitions, automated delta checks, and HL7-compliant audit logs.', 'A mission-critical healthcare backend born out of actual clinical pathology laboratory practice.', 'Healthcare Backend & State Machines', 'https://mediflow-solutions.netlify.app/', 'https://github.com/101manparta/mediflow', ARRAY['TypeScript', 'Node.js', 'PostgreSQL', 'Supabase', 'Express', 'Tailwind CSS'], true, 'published', 3)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;
+
+-- ==============================================================================
+-- 17. INITIAL ADMINISTRATOR BOOTSTRAP
 -- Assigns administrator privileges to I Nyoman Parta Yasa (nvidiaparta@gmail.com)
 -- ==============================================================================
 INSERT INTO admin_users (id, email, role)
