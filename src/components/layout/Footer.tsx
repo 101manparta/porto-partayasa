@@ -1,5 +1,5 @@
 import React from 'react';
-import { ArrowUpRight, ShieldCheck, MapPin } from 'lucide-react';
+import { ArrowUpRight, MapPin } from 'lucide-react';
 
 interface FooterProps {
   onNavigate: (view: string) => void;
@@ -52,17 +52,6 @@ export const Footer: React.FC<FooterProps> = ({ onNavigate }) => {
             <span>Email</span>
             <ArrowUpRight className="w-3 h-3 opacity-60" />
           </a>
-          <button
-            onClick={() => {
-              onNavigate('admin');
-              window.scrollTo({ top: 0, behavior: 'smooth' });
-            }}
-            className="text-neutral-500 hover:text-neutral-300 transition-colors flex items-center gap-1.5 cursor-pointer ml-2"
-            title="Private Admin Access"
-          >
-            <ShieldCheck className="w-3.5 h-3.5 opacity-60" />
-            <span>Admin Console</span>
-          </button>
         </div>
       </div>
 

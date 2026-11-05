@@ -15,7 +15,35 @@ CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 
 -- ------------------------------------------------------------------------------
--- 2. PROFILES TABLE
+-- 2. ADMIN_USERS TABLE
+-- Whitelisted administrator accounts with verified authorization.
+-- ------------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS admin_users (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT UNIQUE NOT NULL,
+  role TEXT NOT NULL DEFAULT 'admin' CHECK (role IN ('admin', 'superadmin')),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT timezone('utc'::text, now())
+);
+
+ALTER TABLE admin_users ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can verify their own admin status" 
+  ON admin_users FOR SELECT 
+  TO authenticated 
+  USING (auth.uid() = id);
+
+-- Helper security definer function to check if caller is an authorized administrator
+CREATE OR REPLACE FUNCTION is_admin()
+RETURNS BOOLEAN AS $$
+BEGIN
+  RETURN EXISTS (
+    SELECT 1 FROM admin_users WHERE id = auth.uid()
+  );
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- ------------------------------------------------------------------------------
+-- 3. PROFILES TABLE
 -- Stores master bio, medical laboratory origin, and verified social links.
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS profiles (
@@ -38,7 +66,7 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 
 -- ------------------------------------------------------------------------------
--- 3. PROJECTS TABLE
+-- 4. PROJECTS TABLE
 -- Stores curated backend systems, live demos, and metadata.
 -- ------------------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS projects (
@@ -311,24 +339,24 @@ CREATE POLICY "Published articles are readable by everyone" ON engineering_artic
 CREATE POLICY "Active social links are readable by everyone" ON social_links FOR SELECT USING (is_active = true);
 CREATE POLICY "Site settings are readable by everyone" ON site_settings FOR SELECT USING (true);
 
--- CONTACT FORM POLICY: Anyone can submit a message, but only authenticated admin can view/manage
+-- CONTACT FORM POLICY: Anyone can submit a message, but only verified admin can view/manage
 CREATE POLICY "Public visitors can insert contact messages" ON contact_messages FOR INSERT WITH CHECK (true);
-CREATE POLICY "Only authenticated users can read contact messages" ON contact_messages FOR SELECT USING (auth.role() = 'authenticated');
-CREATE POLICY "Only authenticated users can update contact messages" ON contact_messages FOR UPDATE USING (auth.role() = 'authenticated');
-CREATE POLICY "Only authenticated users can delete contact messages" ON contact_messages FOR DELETE USING (auth.role() = 'authenticated');
+CREATE POLICY "Only authenticated admin can read contact messages" ON contact_messages FOR SELECT USING (is_admin());
+CREATE POLICY "Only authenticated admin can update contact messages" ON contact_messages FOR UPDATE USING (is_admin());
+CREATE POLICY "Only authenticated admin can delete contact messages" ON contact_messages FOR DELETE USING (is_admin());
 
--- AUTHENTICATED ADMIN FULL ACCESS POLICIES
-CREATE POLICY "Admin full access on profiles" ON profiles FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on projects" ON projects FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on project_images" ON project_images FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on project_documents" ON project_documents FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on case_studies" ON case_studies FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on technologies" ON technologies FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on achievements" ON achievements FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on certifications" ON certifications FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on engineering_articles" ON engineering_articles FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on social_links" ON social_links FOR ALL USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin full access on site_settings" ON site_settings FOR ALL USING (auth.role() = 'authenticated');
+-- AUTHENTICATED ADMIN FULL ACCESS POLICIES (Enforced via is_admin())
+CREATE POLICY "Admin full access on profiles" ON profiles FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on projects" ON projects FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on project_images" ON project_images FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on project_documents" ON project_documents FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on case_studies" ON case_studies FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on technologies" ON technologies FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on achievements" ON achievements FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on certifications" ON certifications FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on engineering_articles" ON engineering_articles FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on social_links" ON social_links FOR ALL USING (is_admin());
+CREATE POLICY "Admin full access on site_settings" ON site_settings FOR ALL USING (is_admin());
 
 -- ==============================================================================
 -- 15. STORAGE BUCKETS SETUP
@@ -341,11 +369,21 @@ INSERT INTO storage.buckets (id, name, public) VALUES
   ('profile-assets', 'profile-assets', true)
 ON CONFLICT (id) DO NOTHING;
 
--- Storage RLS
+-- Storage RLS: Public read, only verified admin can upload, update, and delete
 CREATE POLICY "Public read storage objects" ON storage.objects FOR SELECT USING (bucket_id IN (
   'project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'
 ));
-CREATE POLICY "Admin upload storage objects" ON storage.objects FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-CREATE POLICY "Admin update storage objects" ON storage.objects FOR UPDATE USING (auth.role() = 'authenticated');
-CREATE POLICY "Admin delete storage objects" ON storage.objects FOR DELETE USING (auth.role() = 'authenticated');
+CREATE POLICY "Admin upload storage objects" ON storage.objects FOR INSERT WITH CHECK (is_admin());
+CREATE POLICY "Admin update storage objects" ON storage.objects FOR UPDATE USING (is_admin());
+CREATE POLICY "Admin delete storage objects" ON storage.objects FOR DELETE USING (is_admin());
+
+-- ==============================================================================
+-- 16. INITIAL ADMINISTRATOR BOOTSTRAP
+-- Assigns administrator privileges to I Nyoman Parta Yasa (nvidiaparta@gmail.com)
+-- ==============================================================================
+INSERT INTO admin_users (id, email, role)
+SELECT id, email, 'admin'
+FROM auth.users
+WHERE email = 'nvidiaparta@gmail.com'
+ON CONFLICT (email) DO UPDATE SET role = 'admin';
 `;

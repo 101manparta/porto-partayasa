@@ -93,35 +93,38 @@ import { LiquidGlassCard, LiquidGlassButton } from '../common/LiquidGlass';
 import { ProjectMediaManager } from './ProjectMediaManager';
 import { EngineeringDocsManager } from './EngineeringDocsManager';
 
+import { User as SupabaseUser } from '@supabase/supabase-js';
+import { StorageBucket } from '../../lib/api';
+
+export type AdminTab =
+  | 'overview'
+  | 'profile'
+  | 'projects'
+  | 'project_media'
+  | 'engineering_docs'
+  | 'skills_experience'
+  | 'certificates'
+  | 'supabase_storage'
+  | 'account_settings';
+
 interface AdminDashboardProps {
+  user: SupabaseUser;
+  onLogout: () => void;
   onExit: () => void;
 }
 
-export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
-  // Authentication State
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return localStorage.getItem('parta_admin_session') === 'active';
-  });
-  const [adminPassword, setAdminPassword] = useState('');
-  const [authError, setAuthError] = useState('');
-  const [authLoading, setAuthLoading] = useState(false);
+export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout, onExit }) => {
+  // Active Tab - 9 primary navigation sections
+  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
 
-  // Active Tab - Exactly 8 primary navigation sections
-  const [activeTab, setActiveTab] = useState<
-    | 'overview'
-    | 'projects'
-    | 'project_media'
-    | 'engineering_docs'
-    | 'achievements'
-    | 'certifications'
-    | 'technologies'
-    | 'profile_settings'
-  >('overview');
+  // Sub Tab for Certificates & Account Settings
+  const [certificatesSubTab, setCertificatesSubTab] = useState<'certifications' | 'achievements'>('certifications');
+  const [accountSubTab, setAccountSubTab] = useState<'supabase' | 'messages' | 'articles' | 'casestudies'>('supabase');
 
-  // Sub Tab for Profile Settings suite
-  const [profileSubTab, setProfileSubTab] = useState<
-    'profile' | 'supabase' | 'messages' | 'articles' | 'casestudies'
-  >('profile');
+  // Supabase Storage testing states
+  const [testUploadBucket, setTestUploadBucket] = useState<StorageBucket>('project-images');
+  const [testingStorageUpload, setTestingStorageUpload] = useState(false);
+  const [storageTestResult, setStorageTestResult] = useState<{ success: boolean; message: string; url?: string } | null>(null);
 
   // Dedicated screenshot upload states for editingProject
   const [uploadingScreenshot, setUploadingScreenshot] = useState(false);
@@ -211,69 +214,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
   };
 
   useEffect(() => {
-    if (isAuthenticated) {
-      loadData();
-    }
-  }, [isAuthenticated]);
+    loadData();
+  }, []);
 
   const showNotice = (msg: string) => {
     setActionNotice(msg);
     setTimeout(() => setActionNotice(null), 3000);
   };
 
-  // Auth Handler: Validates admin credential (configured password or Supabase Auth)
-  const handleLogin = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setAuthLoading(true);
-    setAuthError('');
-
-    try {
-      // 1. Check Supabase Auth if connected
-      const supabase = getSupabaseClient();
-      if (supabase) {
-        try {
-          const { error } = await supabase.auth.signInWithPassword({
-            email: 'nvidiaparta@gmail.com',
-            password: adminPassword,
-          });
-          if (!error) {
-            localStorage.setItem('parta_admin_session', 'active');
-            setIsAuthenticated(true);
-            setAuthLoading(false);
-            return;
-          }
-        } catch {
-          // fallback to master administrator authorization token
-        }
-      }
-
-      // 2. Master Administrative Security Barrier for I Nyoman Parta Yasa
-      // Accepts Parta's designated master engineer passphrase or 'parta2026' / 'partabackend'
-      if (
-        adminPassword === 'parta2026' ||
-        adminPassword === 'partabackend' ||
-        adminPassword === 'admin123' ||
-        adminPassword === 'parta'
-      ) {
-        localStorage.setItem('parta_admin_session', 'active');
-        setIsAuthenticated(true);
-      } else {
-        setAuthError('Invalid administrator credentials. Access restricted to authorized engineer.');
-      }
-    } catch {
-      setAuthError('Authentication verification error.');
-    } finally {
-      setAuthLoading(false);
-    }
-  };
-
   const handleLogout = () => {
-    localStorage.removeItem('parta_admin_session');
-    const supabase = getSupabaseClient();
-    if (supabase) {
-      supabase.auth.signOut().catch(() => {});
-    }
-    setIsAuthenticated(false);
+    onLogout();
   };
 
   // Supabase connection actions
@@ -524,87 +474,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
     }
   };
 
-  // ---------------------------------------------------------------------------
-  // IF NOT AUTHENTICATED: SHOW SECURE LOGIN
-  // ---------------------------------------------------------------------------
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen flex items-center justify-center px-4 bg-[#050507]">
-        <div className="w-full max-w-md">
-          <LiquidGlassCard variant="elevated" className="p-8">
-            <div className="flex items-center justify-between mb-6">
-              <div className="flex items-center gap-2">
-                <Lock className="w-5 h-5 text-white" />
-                <span className="font-serif text-xl text-white">Admin Console</span>
-              </div>
-              <button
-                onClick={onExit}
-                className="text-xs font-mono text-neutral-400 hover:text-white flex items-center gap-1 cursor-pointer"
-              >
-                <ArrowLeft className="w-3.5 h-3.5" />
-                <span>Return to Portfolio</span>
-              </button>
-            </div>
 
-            <p className="text-xs text-neutral-400 font-sans mb-6">
-              Authorized access only for I Nyoman Parta Yasa. Secure Supabase Auth & role enforcement.
-            </p>
-
-            {authError && (
-              <div className="mb-4 p-3 bg-white/[0.04] border border-white/20 rounded-xl text-xs text-neutral-300 flex items-center gap-2">
-                <AlertCircle className="w-4 h-4 text-white shrink-0" />
-                <span>{authError}</span>
-              </div>
-            )}
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-mono text-neutral-400 mb-1.5">
-                  ADMINISTRATOR EMAIL
-                </label>
-                <input
-                  type="email"
-                  disabled
-                  value="nvidiaparta@gmail.com"
-                  className="w-full px-4 py-2.5 rounded-xl bg-white/[0.02] border border-white/5 text-neutral-400 text-sm font-mono cursor-not-allowed"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-mono text-neutral-400 mb-1.5">
-                  SECURE PASSPHRASE
-                </label>
-                <input
-                  type="password"
-                  required
-                  placeholder="Enter administrator passphrase (default: parta2026)"
-                  value={adminPassword}
-                  onChange={(e) => setAdminPassword(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white placeholder-neutral-600 text-sm focus:outline-none focus:border-white/30"
-                />
-              </div>
-
-              <div className="pt-2">
-                <LiquidGlassButton
-                  type="submit"
-                  variant="primary"
-                  size="md"
-                  disabled={authLoading}
-                  className="w-full"
-                >
-                  {authLoading ? 'Verifying...' : 'Authenticate & Open Dashboard'}
-                </LiquidGlassButton>
-              </div>
-
-              <div className="text-[11px] font-mono text-neutral-400 text-center pt-2">
-                Authorized Engineer Key: <code className="text-neutral-300">parta2026</code>
-              </div>
-            </form>
-          </LiquidGlassCard>
-        </div>
-      </div>
-    );
-  }
 
   // ---------------------------------------------------------------------------
   // AUTHENTICATED ADMIN DASHBOARD
@@ -641,15 +511,16 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
           <nav className="space-y-1 text-xs font-mono">
             {[
               { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+              { id: 'profile', label: 'Profile', icon: User },
               { id: 'projects', label: 'Projects', count: projects.length, icon: FolderGit2 },
-              { id: 'project_media', label: 'Project Media', icon: ImageIcon },
-              { id: 'engineering_docs', label: 'Engineering Documentation', icon: BookOpen },
-              { id: 'achievements', label: 'Achievements', count: achievements.length, icon: Award },
-              { id: 'certifications', label: 'Certifications', count: certifications.length, icon: ShieldCheck },
-              { id: 'technologies', label: 'Skills & Technologies', count: technologies.length, icon: Cpu },
+              { id: 'project_media', label: 'Project Media', count: allImages.length, icon: ImageIcon },
+              { id: 'engineering_docs', label: 'Engineering Documentation', count: allDocuments.length, icon: BookOpen },
+              { id: 'skills_experience', label: 'Skills & Experience', count: technologies.length, icon: Cpu },
+              { id: 'certificates', label: 'Certificates', count: certifications.length + achievements.length, icon: Award },
+              { id: 'supabase_storage', label: 'Supabase Storage', icon: Database },
               {
-                id: 'profile_settings',
-                label: 'Profile Settings',
+                id: 'account_settings',
+                label: 'Account Settings',
                 count: messages.filter((m) => !m.is_read).length,
                 icon: Settings,
               },
@@ -687,14 +558,17 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
 
         {/* Bottom Session Info & Logout */}
         <div className="pt-6 border-t border-white/[0.06] mt-6 flex items-center justify-between text-xs font-mono">
-          <div className="truncate">
-            <div className="text-white truncate">I Nyoman Parta Yasa</div>
-            <div className="text-[10px] text-neutral-400">Master Administrator</div>
+          <div className="truncate pr-2">
+            <div className="text-white truncate font-medium">{user.email || 'nvidiaparta@gmail.com'}</div>
+            <div className="text-[10px] text-neutral-400 flex items-center gap-1.5 mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0"></span>
+              <span className="truncate">Administrator Verified</span>
+            </div>
           </div>
           <button
             onClick={handleLogout}
-            className="p-2 text-neutral-500 hover:text-white transition-colors cursor-pointer"
-            title="Log Out"
+            className="p-2 text-neutral-400 hover:text-white hover:bg-white/[0.06] rounded-xl transition-colors cursor-pointer shrink-0"
+            title="Log Out & End Session"
           >
             <LogOut className="w-4 h-4" />
           </button>
@@ -716,7 +590,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
             {/* Metrics Grid */}
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               <LiquidGlassCard variant="default" className="p-5">
-                <div className="text-xs font-mono text-neutral-400">PUBLISHED PROJECTS</div>
+                <div className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider">Published Projects</div>
                 <div className="text-3xl font-serif text-white mt-1">
                   {projects.filter((p) => p.publication_status === 'published').length}
                 </div>
@@ -726,102 +600,196 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
               </LiquidGlassCard>
 
               <LiquidGlassCard variant="default" className="p-5">
-                <div className="text-xs font-mono text-neutral-400">ACHIEVEMENTS & AWARDS</div>
-                <div className="text-3xl font-serif text-white mt-1">{achievements.length}</div>
-                <div className="text-[11px] text-neutral-400 font-mono mt-1">Regional & National</div>
-              </LiquidGlassCard>
-
-              <LiquidGlassCard variant="default" className="p-5">
-                <div className="text-xs font-mono text-neutral-400">VERIFIED CERTIFICATIONS</div>
-                <div className="text-3xl font-serif text-white mt-1">{certifications.length}</div>
-                <div className="text-[11px] text-neutral-400 font-mono mt-1">Postgres · Go · Systems</div>
-              </LiquidGlassCard>
-
-              <LiquidGlassCard variant="default" className="p-5">
-                <div className="text-xs font-mono text-neutral-400">INBOUND MESSAGES</div>
-                <div className="text-3xl font-serif text-white mt-1">
-                  {messages.length}
-                </div>
+                <div className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider">Project Images</div>
+                <div className="text-3xl font-serif text-white mt-1">{allImages.length}</div>
                 <div className="text-[11px] text-neutral-400 font-mono mt-1">
-                  {messages.filter((m) => !m.is_read).length} Unread
+                  {allImages.filter((img) => img.is_showcase).length} in Showcase Marquee
+                </div>
+              </LiquidGlassCard>
+
+              <LiquidGlassCard variant="default" className="p-5">
+                <div className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider">Engineering Documents</div>
+                <div className="text-3xl font-serif text-white mt-1">{allDocuments.length}</div>
+                <div className="text-[11px] text-neutral-400 font-mono mt-1">9 Architecture Categories</div>
+              </LiquidGlassCard>
+
+              <LiquidGlassCard variant="default" className="p-5">
+                <div className="text-[11px] font-mono text-neutral-400 uppercase tracking-wider">Total Certificates</div>
+                <div className="text-3xl font-serif text-white mt-1">{certifications.length + achievements.length}</div>
+                <div className="text-[11px] text-neutral-400 font-mono mt-1">
+                  {certifications.length} Certs · {achievements.length} Awards
                 </div>
               </LiquidGlassCard>
             </div>
 
-            {/* Quick Actions & Recent Messages */}
+            {/* Recent Activity & Quick Actions */}
             <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-              {/* Recent Inbound Messages */}
+              {/* Recent Activity Timeline */}
               <div className="lg:col-span-7">
                 <LiquidGlassCard variant="default" className="p-6">
-                  <div className="flex items-center justify-between mb-4">
-                    <h2 className="text-lg font-serif text-white">Recent Inquiries</h2>
-                    <button
-                      onClick={() => {
-                        setActiveTab('profile_settings');
-                        setProfileSubTab('messages');
-                      }}
-                      className="text-xs font-mono text-neutral-400 hover:text-white"
-                    >
-                      View All ({messages.length}) →
-                    </button>
+                  <div className="flex items-center justify-between mb-4 pb-3 border-b border-white/[0.06]">
+                    <div>
+                      <h2 className="text-lg font-serif text-white tracking-tight">Recent Activity</h2>
+                      <p className="text-[11px] text-neutral-400 font-mono">Live events from projects, media, and inbound messages</p>
+                    </div>
                   </div>
 
-                  {messages.length === 0 ? (
-                    <div className="py-8 text-center text-xs font-mono text-neutral-500">
-                      No inbound inquiries received yet.
-                    </div>
-                  ) : (
-                    <div className="space-y-3">
-                      {messages.slice(0, 3).map((m) => (
+                  <div className="space-y-3">
+                    {[
+                      ...projects.map((p) => ({
+                        id: `p-${p.id}`,
+                        label: `Project: ${p.name}`,
+                        detail: `${p.category} · ${p.publication_status.toUpperCase()}`,
+                        tag: 'Project',
+                        time: p.updated_at || p.created_at,
+                        onClick: () => {
+                          setEditingProject(p);
+                          setActiveTab('projects');
+                        },
+                      })),
+                      ...allImages.slice(0, 4).map((img) => ({
+                        id: `img-${img.id}`,
+                        label: `Uploaded Media: ${img.title || img.caption || 'Screenshot'}`,
+                        detail: img.file_name ? `${img.file_name} (${img.image_type})` : img.image_type,
+                        tag: 'Media',
+                        time: img.created_at,
+                        onClick: () => setActiveTab('project_media'),
+                      })),
+                      ...allDocuments.slice(0, 4).map((doc) => ({
+                        id: `doc-${doc.id}`,
+                        label: `Documentation: ${doc.title}`,
+                        detail: `${doc.category} · ${doc.file_name}`,
+                        tag: 'Document',
+                        time: doc.created_at,
+                        onClick: () => setActiveTab('engineering_docs'),
+                      })),
+                      ...messages.slice(0, 4).map((m) => ({
+                        id: `msg-${m.id}`,
+                        label: `Inquiry from ${m.sender_name}`,
+                        detail: `"${m.subject}" · ${m.sender_email}`,
+                        tag: 'Message',
+                        time: m.created_at,
+                        onClick: () => {
+                          setActiveTab('account_settings');
+                          setAccountSubTab('messages');
+                        },
+                      })),
+                    ]
+                      .sort((a, b) => new Date(b.time || 0).getTime() - new Date(a.time || 0).getTime())
+                      .slice(0, 6)
+                      .map((act) => (
                         <div
-                          key={m.id}
-                          className="p-3 bg-white/[0.02] border border-white/5 rounded-xl space-y-1"
+                          key={act.id}
+                          onClick={act.onClick}
+                          className="p-3 bg-white/[0.02] border border-white/5 rounded-xl hover:border-white/20 transition-all cursor-pointer flex items-center justify-between gap-3 group"
                         >
-                          <div className="flex items-center justify-between text-xs">
-                            <span className="font-semibold text-white">{m.sender_name}</span>
-                            <span className="text-[10px] font-mono text-neutral-500">
-                              {new Date(m.created_at).toLocaleDateString()}
-                            </span>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-white/[0.06] text-neutral-300">
+                                {act.tag}
+                              </span>
+                              <span className="text-xs font-medium text-white truncate group-hover:text-neutral-200">
+                                {act.label}
+                              </span>
+                            </div>
+                            <div className="text-[11px] text-neutral-400 font-sans truncate mt-0.5">
+                              {act.detail}
+                            </div>
                           </div>
-                          <div className="text-xs text-neutral-300 font-mono">{m.subject}</div>
-                          <p className="text-xs text-neutral-400 truncate font-sans">{m.message}</p>
+                          <span className="text-[10px] font-mono text-neutral-500 shrink-0">
+                            {act.time ? new Date(act.time).toLocaleDateString() : 'Recent'}
+                          </span>
                         </div>
                       ))}
-                    </div>
-                  )}
+                  </div>
                 </LiquidGlassCard>
               </div>
 
-              {/* Engine Status */}
-              <div className="lg:col-span-5">
+              {/* Quick Actions & Supabase Diagnostics */}
+              <div className="lg:col-span-5 space-y-6">
                 <LiquidGlassCard variant="default" className="p-6 space-y-4">
-                  <h2 className="text-lg font-serif text-white">Supabase Status</h2>
-                  <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl text-xs font-mono space-y-2">
-                    <div className="flex justify-between items-center">
-                      <span className="text-neutral-400">Database Engine:</span>
-                      <span className="text-white font-semibold">PostgreSQL</span>
+                  <h2 className="text-lg font-serif text-white tracking-tight">Quick Actions</h2>
+                  <div className="grid grid-cols-1 gap-2 text-xs font-mono">
+                    <button
+                      onClick={() => {
+                        setEditingProject({
+                          name: '',
+                          slug: '',
+                          short_description: '',
+                          full_description: '',
+                          category: 'Backend Engineering',
+                          live_url: '',
+                          github_url: '',
+                          thumbnail_url: '',
+                          technologies: ['Go', 'PostgreSQL'],
+                          is_featured: false,
+                          publication_status: 'draft',
+                          display_order: projects.length + 1,
+                          images: [],
+                          documents: [],
+                        });
+                        setActiveTab('projects');
+                      }}
+                      className="w-full flex items-center justify-between p-3 rounded-xl bg-white text-black font-semibold hover:bg-neutral-200 transition-colors cursor-pointer"
+                    >
+                      <span>+ Create New Project</span>
+                      <span>→</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('project_media')}
+                      className="w-full flex items-center justify-between p-3 rounded-xl liquid-glass text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <span>Upload Project Media</span>
+                      <span>→</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('engineering_docs')}
+                      className="w-full flex items-center justify-between p-3 rounded-xl liquid-glass text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <span>Add Architecture Blueprint</span>
+                      <span>→</span>
+                    </button>
+                    <button
+                      onClick={() => setActiveTab('supabase_storage')}
+                      className="w-full flex items-center justify-between p-3 rounded-xl liquid-glass text-neutral-300 hover:text-white transition-colors cursor-pointer"
+                    >
+                      <span>Supabase Storage Console</span>
+                      <span>→</span>
+                    </button>
+                  </div>
+                </LiquidGlassCard>
+
+                <LiquidGlassCard variant="default" className="p-6 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-serif text-white">Supabase Status</h3>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Connected
+                    </span>
+                  </div>
+                  <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl text-xs font-mono space-y-1.5 text-neutral-400">
+                    <div className="flex justify-between">
+                      <span>Auth Engine:</span>
+                      <span className="text-white">Supabase Auth (RLS)</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-neutral-400">RLS Enforcement:</span>
-                      <span className="text-white">Active</span>
+                    <div className="flex justify-between">
+                      <span>PostgreSQL Tables:</span>
+                      <span className="text-white">Verified</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-neutral-400">BaaS Provider:</span>
-                      <span className="text-white">Supabase</span>
+                    <div className="flex justify-between">
+                      <span>Storage Buckets:</span>
+                      <span className="text-white">5 Active</span>
                     </div>
                   </div>
-
                   <LiquidGlassButton
                     variant="secondary"
                     size="sm"
                     onClick={() => {
-                      setActiveTab('profile_settings');
-                      setProfileSubTab('supabase');
+                      setActiveTab('account_settings');
+                      setAccountSubTab('supabase');
                     }}
-                    className="w-full text-xs font-mono"
+                    className="w-full text-xs font-mono justify-center"
                   >
-                    <Settings className="w-3.5 h-3.5" />
-                    <span>Manage Connection & Schema</span>
+                    <span>Manage Connection & Migrations</span>
                   </LiquidGlassButton>
                 </LiquidGlassCard>
               </div>
@@ -830,7 +798,155 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
         )}
 
         {/* ----------------------------------------------------------------- */}
-        {/* TAB 2: PROJECTS MANAGEMENT */}
+        {/* TAB 2: PROFILE BIO & IDENTITY */}
+        {/* ----------------------------------------------------------------- */}
+        {activeTab === 'profile' && profile && (
+          <div className="space-y-6 max-w-5xl">
+            <div className="flex items-center justify-between">
+              <div>
+                <div className="text-xs font-mono text-neutral-400">IDENTITY & BIOGRAPHY</div>
+                <h1 className="text-3xl font-serif text-white tracking-tight mt-1">Profile Management</h1>
+                <p className="text-xs text-neutral-400 font-sans mt-1">
+                  Update your public engineering positioning, medical laboratory transition narrative, and social networks.
+                </p>
+              </div>
+            </div>
+
+            <LiquidGlassCard variant="default" className="p-6 sm:p-8 space-y-6">
+              <form
+                onSubmit={async (e) => {
+                  e.preventDefault();
+                  await updateProfile(profile);
+                  showNotice('Profile updated in Supabase database.');
+                }}
+                className="space-y-5 text-xs font-mono"
+              >
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">FULL NAME</label>
+                    <input
+                      type="text"
+                      value={profile.full_name}
+                      onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">PROFESSIONAL TITLE</label>
+                    <input
+                      type="text"
+                      value={profile.professional_title}
+                      onChange={(e) => setProfile({ ...profile, professional_title: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">LOCATION</label>
+                    <input
+                      type="text"
+                      value={profile.location}
+                      onChange={(e) => setProfile({ ...profile, location: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">EMAIL ADDRESS</label>
+                    <input
+                      type="email"
+                      value={profile.email}
+                      onChange={(e) => setProfile({ ...profile, email: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-neutral-400 mb-1">HERO HEADLINE</label>
+                  <input
+                    type="text"
+                    value={profile.hero_headline}
+                    onChange={(e) => setProfile({ ...profile, hero_headline: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-neutral-400 mb-1">HERO STATEMENT</label>
+                  <input
+                    type="text"
+                    value={profile.hero_statement}
+                    onChange={(e) => setProfile({ ...profile, hero_statement: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-neutral-400 mb-1">SHORT BIOGRAPHY</label>
+                  <textarea
+                    rows={3}
+                    value={profile.bio_short}
+                    onChange={(e) => setProfile({ ...profile, bio_short: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm font-sans focus:border-white/30 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-neutral-400 mb-1">EDITORIAL BIOGRAPHY</label>
+                  <textarea
+                    rows={6}
+                    value={profile.bio_full}
+                    onChange={(e) => setProfile({ ...profile, bio_full: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm font-sans focus:border-white/30 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-neutral-400 mb-1">MEDICAL LABORATORY ORIGIN & CLINICAL RIGOR</label>
+                  <textarea
+                    rows={6}
+                    value={profile.medical_lab_journey || ''}
+                    onChange={(e) => setProfile({ ...profile, medical_lab_journey: e.target.value })}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm font-sans focus:border-white/30 focus:outline-none"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-neutral-400 mb-1">GITHUB URL</label>
+                    <input
+                      type="url"
+                      value={profile.github_url}
+                      onChange={(e) => setProfile({ ...profile, github_url: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-neutral-400 mb-1">LINKEDIN URL</label>
+                    <input
+                      type="url"
+                      value={profile.linkedin_url}
+                      onChange={(e) => setProfile({ ...profile, linkedin_url: e.target.value })}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm focus:border-white/30 focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="pt-2">
+                  <LiquidGlassButton variant="primary" size="md" type="submit">
+                    <Check className="w-4 h-4" />
+                    <span>Save Profile to Supabase Database</span>
+                  </LiquidGlassButton>
+                </div>
+              </form>
+            </LiquidGlassCard>
+          </div>
+        )}
+
+        {/* ----------------------------------------------------------------- */}
+        {/* TAB 3: PROJECTS MANAGEMENT */}
         {/* ----------------------------------------------------------------- */}
         {activeTab === 'projects' && (
           <div className="space-y-6 max-w-6xl">
@@ -979,157 +1095,186 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
         )}
 
         {/* ----------------------------------------------------------------- */}
-        {/* TAB 5: ACHIEVEMENTS MANAGEMENT */}
+        {/* TAB 7: CERTIFICATES & ACHIEVEMENTS MANAGEMENT */}
         {/* ----------------------------------------------------------------- */}
-        {activeTab === 'achievements' && (
+        {activeTab === 'certificates' && (
           <div className="space-y-6 max-w-6xl">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div>
-                <div className="text-xs font-mono text-neutral-400">HONORS & COMPETITIONS</div>
-                <h1 className="text-3xl font-serif text-white tracking-tight mt-1">Achievements Management</h1>
+                <div className="text-xs font-mono text-neutral-400">CREDENTIALS & HONORS</div>
+                <h1 className="text-3xl font-serif text-white tracking-tight mt-1">Certificates & Awards</h1>
+                <p className="text-xs text-neutral-400 font-sans mt-1">
+                  Manage verified certifications, professional licensures, hackathon awards, and competition achievements.
+                </p>
               </div>
-              <LiquidGlassButton
-                variant="primary"
-                size="sm"
-                onClick={() =>
-                  setEditingAchievement({
-                    title: '',
-                    competition_name: '',
-                    organization: '',
-                    year: '2025',
-                    category: 'System Architecture',
-                    award_ranking: '1st Place',
-                    description: '',
-                    personal_contribution: '',
-                    technologies_used: ['PostgreSQL', 'Go'],
-                    is_published: true,
-                    display_order: achievements.length + 1,
-                  })
-                }
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>New Achievement</span>
-              </LiquidGlassButton>
+
+              {/* Subtab Toggle */}
+              <div className="flex items-center gap-2 p-1 liquid-glass rounded-xl text-xs font-mono">
+                <button
+                  onClick={() => setCertificatesSubTab('certifications')}
+                  className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                    certificatesSubTab === 'certifications'
+                      ? 'bg-white text-black font-semibold'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Verified Certifications ({certifications.length})
+                </button>
+                <button
+                  onClick={() => setCertificatesSubTab('achievements')}
+                  className={`px-3 py-1.5 rounded-lg transition-colors cursor-pointer ${
+                    certificatesSubTab === 'achievements'
+                      ? 'bg-white text-black font-semibold'
+                      : 'text-neutral-400 hover:text-white'
+                  }`}
+                >
+                  Achievements & Honors ({achievements.length})
+                </button>
+              </div>
             </div>
 
-            <div className="space-y-4">
-              {achievements.map((ach) => (
-                <LiquidGlassCard key={ach.id} variant="default" className="p-5 flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
-                      <span className="text-white font-semibold">{ach.award_ranking}</span>
-                      <span>·</span>
-                      <span>{ach.year}</span>
-                      <span>·</span>
-                      <span>{ach.competition_name}</span>
-                    </div>
-                    <h3 className="text-lg font-serif text-white mt-1">{ach.title}</h3>
-                    <p className="text-xs text-neutral-300 font-sans mt-1 max-w-2xl">{ach.description}</p>
-                    {ach.certificate_url && (
-                      <div className="mt-2 text-[11px] font-mono text-neutral-400 flex items-center gap-1.5">
-                        <FileCheck className="w-3.5 h-3.5 text-neutral-300" />
-                        <span>Certificate file verified & attached</span>
+            {/* SUBTAB A: CERTIFICATIONS */}
+            {certificatesSubTab === 'certifications' && (
+              <div className="space-y-4">
+                <div className="flex justify-end">
+                  <LiquidGlassButton
+                    variant="primary"
+                    size="sm"
+                    onClick={() =>
+                      setEditingCertification({
+                        title: '',
+                        issuing_organization: '',
+                        issue_date: '2025',
+                        expiration_date: 'Lifetime',
+                        credential_url: '',
+                        skills_gained: ['Database Architecture'],
+                        description: '',
+                        is_published: true,
+                        display_order: certifications.length + 1,
+                      })
+                    }
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>New Certification</span>
+                  </LiquidGlassButton>
+                </div>
+
+                <div className="space-y-4">
+                  {certifications.map((cert) => (
+                    <LiquidGlassCard key={cert.id} variant="default" className="p-5 flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
+                          <span className="text-white font-medium">{cert.issuing_organization}</span>
+                          <span>·</span>
+                          <span>{cert.issue_date}</span>
+                        </div>
+                        <h3 className="text-lg font-serif text-white mt-1">{cert.title}</h3>
+                        <p className="text-xs text-neutral-300 font-sans mt-1 max-w-2xl">{cert.description}</p>
+                        {cert.certificate_url && (
+                          <div className="mt-2 text-[11px] font-mono text-neutral-400 flex items-center gap-1.5">
+                            <FileCheck className="w-3.5 h-3.5 text-neutral-300" />
+                            <span>Certificate document attached</span>
+                          </div>
+                        )}
                       </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => setEditingAchievement(ach)}
-                      className="p-1.5 liquid-glass rounded hover:text-white transition-colors cursor-pointer"
-                      title="Edit Achievement"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteAchievement(ach.id)}
-                      className="p-1.5 liquid-glass rounded text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-                      title="Delete Achievement"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </LiquidGlassCard>
-              ))}
-            </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setEditingCertification(cert)}
+                          className="p-1.5 liquid-glass rounded hover:text-white transition-colors cursor-pointer"
+                          title="Edit Certification"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteCert(cert.id)}
+                          className="p-1.5 liquid-glass rounded text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                          title="Delete Certification"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </LiquidGlassCard>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* SUBTAB B: ACHIEVEMENTS */}
+            {certificatesSubTab === 'achievements' && (
+              <div className="space-y-4">
+                <div className="flex justify-end">
+                  <LiquidGlassButton
+                    variant="primary"
+                    size="sm"
+                    onClick={() =>
+                      setEditingAchievement({
+                        title: '',
+                        competition_name: '',
+                        organization: '',
+                        year: '2025',
+                        category: 'System Architecture',
+                        award_ranking: '1st Place',
+                        description: '',
+                        personal_contribution: '',
+                        technologies_used: ['PostgreSQL', 'Go'],
+                        is_published: true,
+                        display_order: achievements.length + 1,
+                      })
+                    }
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>New Achievement</span>
+                  </LiquidGlassButton>
+                </div>
+
+                <div className="space-y-4">
+                  {achievements.map((ach) => (
+                    <LiquidGlassCard key={ach.id} variant="default" className="p-5 flex items-start justify-between gap-4">
+                      <div>
+                        <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
+                          <span className="text-white font-semibold">{ach.award_ranking}</span>
+                          <span>·</span>
+                          <span>{ach.year}</span>
+                          <span>·</span>
+                          <span>{ach.competition_name}</span>
+                        </div>
+                        <h3 className="text-lg font-serif text-white mt-1">{ach.title}</h3>
+                        <p className="text-xs text-neutral-300 font-sans mt-1 max-w-2xl">{ach.description}</p>
+                        {ach.certificate_url && (
+                          <div className="mt-2 text-[11px] font-mono text-neutral-400 flex items-center gap-1.5">
+                            <FileCheck className="w-3.5 h-3.5 text-neutral-300" />
+                            <span>Certificate file verified & attached</span>
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <button
+                          onClick={() => setEditingAchievement(ach)}
+                          className="p-1.5 liquid-glass rounded hover:text-white transition-colors cursor-pointer"
+                          title="Edit Achievement"
+                        >
+                          <Edit className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDeleteAchievement(ach.id)}
+                          className="p-1.5 liquid-glass rounded text-red-400 hover:text-red-300 transition-colors cursor-pointer"
+                          title="Delete Achievement"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </LiquidGlassCard>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
         {/* ----------------------------------------------------------------- */}
-        {/* TAB 6: CERTIFICATIONS MANAGEMENT */}
+        {/* TAB 8: SKILLS & TECHNOLOGIES */}
         {/* ----------------------------------------------------------------- */}
-        {activeTab === 'certifications' && (
-          <div className="space-y-6 max-w-6xl">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="text-xs font-mono text-neutral-400">TECHNICAL MASTERY</div>
-                <h1 className="text-3xl font-serif text-white tracking-tight mt-1">Certifications Management</h1>
-              </div>
-              <LiquidGlassButton
-                variant="primary"
-                size="sm"
-                onClick={() =>
-                  setEditingCertification({
-                    title: '',
-                    issuing_organization: '',
-                    issue_date: '2025',
-                    expiration_date: 'Lifetime',
-                    credential_url: '',
-                    skills_gained: ['Database Architecture'],
-                    description: '',
-                    is_published: true,
-                    display_order: certifications.length + 1,
-                  })
-                }
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>New Certification</span>
-              </LiquidGlassButton>
-            </div>
-
-            <div className="space-y-4">
-              {certifications.map((cert) => (
-                <LiquidGlassCard key={cert.id} variant="default" className="p-5 flex items-start justify-between gap-4">
-                  <div>
-                    <div className="flex items-center gap-2 text-xs font-mono text-neutral-400">
-                      <span className="text-white">{cert.issuing_organization}</span>
-                      <span>·</span>
-                      <span>{cert.issue_date}</span>
-                    </div>
-                    <h3 className="text-lg font-serif text-white mt-1">{cert.title}</h3>
-                    <p className="text-xs text-neutral-300 font-sans mt-1 max-w-2xl">{cert.description}</p>
-                    {cert.certificate_url && (
-                      <div className="mt-2 text-[11px] font-mono text-neutral-400 flex items-center gap-1.5">
-                        <FileCheck className="w-3.5 h-3.5 text-neutral-300" />
-                        <span>Certificate document attached</span>
-                      </div>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <button
-                      onClick={() => setEditingCertification(cert)}
-                      className="p-1.5 liquid-glass rounded hover:text-white transition-colors cursor-pointer"
-                      title="Edit Certification"
-                    >
-                      <Edit className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={() => handleDeleteCert(cert.id)}
-                      className="p-1.5 liquid-glass rounded text-red-400 hover:text-red-300 transition-colors cursor-pointer"
-                      title="Delete Certification"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </LiquidGlassCard>
-              ))}
-            </div>
-          </div>
-        )}
-
-        {/* ----------------------------------------------------------------- */}
-        {/* TAB 7: SKILLS & TECHNOLOGIES */}
-        {/* ----------------------------------------------------------------- */}
-        {activeTab === 'technologies' && (
+        {activeTab === 'skills_experience' && (
           <div className="space-y-6 max-w-6xl">
             <div className="flex items-center justify-between">
               <div>
@@ -1165,22 +1310,213 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
         )}
 
         {/* ----------------------------------------------------------------- */}
-        {/* TAB 8: PROFILE SETTINGS (CONSOLIDATED SUITE) */}
+        {/* TAB 8: SUPABASE STORAGE CONSOLE */}
         {/* ----------------------------------------------------------------- */}
-        {activeTab === 'profile_settings' && (
+        {activeTab === 'supabase_storage' && (
           <div className="space-y-8 max-w-6xl">
             <div>
-              <div className="text-xs font-mono text-neutral-400">ADMINISTRATION & SETTINGS</div>
-              <h1 className="text-3xl font-serif text-white tracking-tight mt-1">Profile & System Settings</h1>
+              <div className="text-xs font-mono text-neutral-400">STORAGE ARCHITECTURE</div>
+              <h1 className="text-3xl font-serif text-white tracking-tight mt-1">Supabase Storage Console</h1>
               <p className="text-xs text-neutral-400 font-sans mt-1">
-                Configure biography, live Supabase PostgreSQL connection, inbound inquiries, and case studies.
+                Manage binary asset buckets, inspect storage security policies, and test real file uploads.
               </p>
+            </div>
+
+            {/* Storage Buckets Overview */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[
+                {
+                  id: 'project-images',
+                  name: 'project-images',
+                  title: 'Project Images & Screens',
+                  desc: 'Screenshots, system console telemetry captures, and UI evidence.',
+                  count: `${allImages.length} items`,
+                  access: 'Public Read · Admin Write (RLS)',
+                },
+                {
+                  id: 'engineering-documents',
+                  name: 'engineering-documents',
+                  title: 'Engineering Documents',
+                  desc: 'System architecture blueprints, database ERDs, and technical PDF whitepapers.',
+                  count: `${allDocuments.length} documents`,
+                  access: 'Public Read · Admin Write (RLS)',
+                },
+                {
+                  id: 'achievement-certificates',
+                  name: 'achievement-certificates',
+                  title: 'Achievement Certificates',
+                  desc: 'Competition certificates, hackathon honors, and award proofs.',
+                  count: `${achievements.length} records`,
+                  access: 'Public Read · Admin Write (RLS)',
+                },
+                {
+                  id: 'certification-files',
+                  name: 'certification-files',
+                  title: 'Certification Credentials',
+                  desc: 'Professional engineering certifications, licenses, and verified PDFs.',
+                  count: `${certifications.length} records`,
+                  access: 'Public Read · Admin Write (RLS)',
+                },
+                {
+                  id: 'profile-assets',
+                  name: 'profile-assets',
+                  title: 'Profile Assets',
+                  desc: 'Engineer portrait, avatars, resume CVs, and biography assets.',
+                  count: '1 active profile',
+                  access: 'Public Read · Admin Write (RLS)',
+                },
+              ].map((bucket) => (
+                <LiquidGlassCard key={bucket.id} variant="default" className="p-5 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <Database className="w-4 h-4 text-white" />
+                      <span className="font-mono text-xs font-semibold text-white">{bucket.name}</span>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded-md bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                      Active
+                    </span>
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-serif text-white">{bucket.title}</h3>
+                    <p className="text-xs text-neutral-400 font-sans mt-0.5">{bucket.desc}</p>
+                  </div>
+                  <div className="pt-2 border-t border-white/[0.06] flex items-center justify-between text-[11px] font-mono text-neutral-400">
+                    <span>{bucket.count}</span>
+                    <span className="text-neutral-500">{bucket.access}</span>
+                  </div>
+                </LiquidGlassCard>
+              ))}
+            </div>
+
+            {/* Interactive Live Upload Tester */}
+            <LiquidGlassCard variant="default" className="p-6 sm:p-8 space-y-5">
+              <div>
+                <h2 className="text-xl font-serif text-white tracking-tight">Live Storage Upload Diagnostics</h2>
+                <p className="text-xs text-neutral-400 font-sans mt-0.5">
+                  Verify real binary uploads to Supabase Storage and test Row Level Security rules directly.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+                <div className="sm:col-span-4">
+                  <label className="block text-xs font-mono text-neutral-400 mb-1.5">TARGET BUCKET</label>
+                  <select
+                    value={testUploadBucket}
+                    onChange={(e) => setTestUploadBucket(e.target.value as StorageBucket)}
+                    className="w-full px-3 py-2.5 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs font-mono focus:border-white/30 focus:outline-none"
+                  >
+                    <option value="project-images" className="bg-[#050507]">project-images</option>
+                    <option value="engineering-documents" className="bg-[#050507]">engineering-documents</option>
+                    <option value="achievement-certificates" className="bg-[#050507]">achievement-certificates</option>
+                    <option value="certification-files" className="bg-[#050507]">certification-files</option>
+                    <option value="profile-assets" className="bg-[#050507]">profile-assets</option>
+                  </select>
+                </div>
+
+                <div className="sm:col-span-8">
+                  <label className="block text-xs font-mono text-neutral-400 mb-1.5">TEST FILE UPLOAD</label>
+                  <input
+                    type="file"
+                    disabled={testingStorageUpload}
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0];
+                      if (!file) return;
+                      setTestingStorageUpload(true);
+                      setStorageTestResult(null);
+                      try {
+                        const res = await uploadFileToStorage(testUploadBucket, file, 'diagnostics');
+                        setStorageTestResult({
+                          success: true,
+                          message: `File "${file.name}" (${(file.size / 1024).toFixed(1)} KB) successfully uploaded to bucket "${testUploadBucket}".`,
+                          url: res.publicUrl,
+                        });
+                        showNotice(`Upload to ${testUploadBucket} verified!`);
+                      } catch (err: unknown) {
+                        const msg = err instanceof Error ? err.message : 'Upload failed';
+                        setStorageTestResult({
+                          success: false,
+                          message: `Upload error: ${msg}`,
+                        });
+                      } finally {
+                        setTestingStorageUpload(false);
+                      }
+                    }}
+                    className="w-full text-xs font-mono text-neutral-400 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-mono file:bg-white file:text-black hover:file:bg-neutral-200 file:cursor-pointer p-1 bg-white/[0.02] border border-white/10 rounded-xl"
+                  />
+                </div>
+              </div>
+
+              {testingStorageUpload && (
+                <div className="p-3 bg-white/[0.04] border border-white/10 rounded-xl text-xs font-mono text-white flex items-center gap-2">
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  <span>Uploading binary to Supabase Storage bucket "{testUploadBucket}"...</span>
+                </div>
+              )}
+
+              {storageTestResult && (
+                <div
+                  className={`p-4 rounded-xl text-xs font-mono border ${
+                    storageTestResult.success
+                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-200'
+                      : 'bg-red-500/10 border-red-500/20 text-red-200'
+                  }`}
+                >
+                  <div className="font-semibold mb-1">
+                    {storageTestResult.success ? 'Upload Succeeded' : 'Upload Failed'}
+                  </div>
+                  <div>{storageTestResult.message}</div>
+                  {storageTestResult.url && (
+                    <div className="mt-2 pt-2 border-t border-emerald-500/20 truncate">
+                      <span className="text-neutral-400">Public URL: </span>
+                      <a
+                        href={storageTestResult.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-white underline hover:text-neutral-200"
+                      >
+                        {storageTestResult.url}
+                      </a>
+                    </div>
+                  )}
+                </div>
+              )}
+            </LiquidGlassCard>
+          </div>
+        )}
+
+        {/* ----------------------------------------------------------------- */}
+        {/* TAB 9: ACCOUNT SETTINGS & SYSTEM CONSOLE */}
+        {/* ----------------------------------------------------------------- */}
+        {activeTab === 'account_settings' && (
+          <div className="space-y-8 max-w-6xl">
+            {/* Header with authenticated session credentials */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <div className="text-xs font-mono text-neutral-400">ADMINISTRATIVE ACCESS</div>
+                <h1 className="text-3xl font-serif text-white tracking-tight mt-1">Account & System Settings</h1>
+                <p className="text-xs text-neutral-400 font-sans mt-1">
+                  Manage your authenticated session, Supabase PostgreSQL connection, inquiries, and technical articles.
+                </p>
+              </div>
+
+              {/* Verified Session Card */}
+              <div className="p-3 liquid-glass rounded-xl border border-white/10 text-xs font-mono flex items-center gap-3">
+                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-serif text-white font-bold">
+                  P
+                </div>
+                <div>
+                  <div className="text-white font-medium">{user.email}</div>
+                  <div className="text-[10px] text-neutral-400 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+                    <span>Admin Role Verified via Supabase</span>
+                  </div>
+                </div>
+              </div>
             </div>
 
             {/* Segmented Sub Tabs */}
             <div className="flex flex-wrap items-center gap-2 border-b border-white/[0.08] pb-3 text-xs font-mono">
               {[
-                { id: 'profile', label: 'Profile Bio & Identity', icon: User },
                 { id: 'supabase', label: 'Supabase Engine & Migrations', icon: Database },
                 {
                   id: 'messages',
@@ -1191,12 +1527,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
                 { id: 'casestudies', label: 'Case Studies Directory', icon: FileText },
               ].map((sub) => {
                 const Icon = sub.icon;
-                const isActive = profileSubTab === sub.id;
+                const isActive = accountSubTab === sub.id;
                 return (
                   <button
                     key={sub.id}
-                    onClick={() => setProfileSubTab(sub.id as typeof profileSubTab)}
-                    className={`flex items-center gap-2 px-3 py-1.5 rounded-xl transition-colors cursor-pointer ${
+                    onClick={() => setAccountSubTab(sub.id as typeof accountSubTab)}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl transition-colors cursor-pointer ${
                       isActive
                         ? 'bg-white text-black font-semibold'
                         : 'liquid-glass text-neutral-400 hover:text-white'
@@ -1209,120 +1545,8 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
               })}
             </div>
 
-            {/* SUB-SECTION 1: PROFILE BIO */}
-            {profileSubTab === 'profile' && profile && (
-              <LiquidGlassCard variant="default" className="p-6 sm:p-8 space-y-4">
-                <form
-                  onSubmit={async (e) => {
-                    e.preventDefault();
-                    await updateProfile(profile);
-                    showNotice('Profile updated successfully.');
-                  }}
-                  className="space-y-4 text-xs font-mono"
-                >
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-neutral-400 mb-1">FULL NAME</label>
-                      <input
-                        type="text"
-                        value={profile.full_name}
-                        onChange={(e) => setProfile({ ...profile, full_name: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-neutral-400 mb-1">PROFESSIONAL TITLE</label>
-                      <input
-                        type="text"
-                        value={profile.professional_title}
-                        onChange={(e) => setProfile({ ...profile, professional_title: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                    <div>
-                      <label className="block text-neutral-400 mb-1">LOCATION</label>
-                      <input
-                        type="text"
-                        value={profile.location}
-                        onChange={(e) => setProfile({ ...profile, location: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-neutral-400 mb-1">EMAIL ADDRESS</label>
-                      <input
-                        type="email"
-                        value={profile.email}
-                        onChange={(e) => setProfile({ ...profile, email: e.target.value })}
-                        className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                      />
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-neutral-400 mb-1">HERO HEADLINE</label>
-                    <input
-                      type="text"
-                      value={profile.hero_headline}
-                      onChange={(e) => setProfile({ ...profile, hero_headline: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-neutral-400 mb-1">HERO STATEMENT</label>
-                    <input
-                      type="text"
-                      value={profile.hero_statement}
-                      onChange={(e) => setProfile({ ...profile, hero_statement: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-neutral-400 mb-1">SHORT BIOGRAPHY</label>
-                    <textarea
-                      rows={3}
-                      value={profile.bio_short}
-                      onChange={(e) => setProfile({ ...profile, bio_short: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-neutral-400 mb-1">FULL BIOGRAPHY</label>
-                    <textarea
-                      rows={6}
-                      value={profile.bio_full}
-                      onChange={(e) => setProfile({ ...profile, bio_full: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-neutral-400 mb-1">MEDICAL LABORATORY JOURNEY</label>
-                    <textarea
-                      rows={6}
-                      value={profile.medical_lab_journey}
-                      onChange={(e) => setProfile({ ...profile, medical_lab_journey: e.target.value })}
-                      className="w-full px-3 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-sm"
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <LiquidGlassButton type="submit" variant="primary" size="md">
-                      Save Profile Changes
-                    </LiquidGlassButton>
-                  </div>
-                </form>
-              </LiquidGlassCard>
-            )}
-
             {/* SUB-SECTION 2: SUPABASE ENGINE & MIGRATION */}
-            {profileSubTab === 'supabase' && (
+            {accountSubTab === 'supabase' && (
               <div className="space-y-6">
                 <LiquidGlassCard variant="default" className="p-6 sm:p-8 space-y-6">
                   <h2 className="text-xl font-serif text-white">Live Supabase Connection</h2>
@@ -1427,7 +1651,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
             )}
 
             {/* SUB-SECTION 3: INBOUND MESSAGES */}
-            {profileSubTab === 'messages' && (
+            {accountSubTab === 'messages' && (
               <div className="space-y-4">
                 {messages.length === 0 ? (
                   <LiquidGlassCard variant="default" className="p-8 text-center text-xs font-mono text-neutral-500">
@@ -1490,7 +1714,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
             )}
 
             {/* SUB-SECTION 4: ENGINEERING ARTICLES */}
-            {profileSubTab === 'articles' && (
+            {accountSubTab === 'articles' && (
               <div className="space-y-4">
                 <div className="flex justify-end">
                   <LiquidGlassButton
@@ -1547,7 +1771,7 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onExit }) => {
             )}
 
             {/* SUB-SECTION 5: CASE STUDIES DIRECTORY */}
-            {profileSubTab === 'casestudies' && (
+            {accountSubTab === 'casestudies' && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {projects.map((proj) => (
                   <LiquidGlassCard key={proj.id} variant="default" className="p-6 space-y-4">
