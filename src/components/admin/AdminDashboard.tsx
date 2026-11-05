@@ -863,6 +863,30 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout, 
                   </div>
                 </div>
 
+                {/* Avatar / Portrait Photo Field with live preview */}
+                <div className="p-4 bg-white/[0.02] border border-white/10 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center gap-4">
+                  <div className="w-14 h-18 rounded-xl overflow-hidden border border-white/15 bg-neutral-900 shrink-0">
+                    <img
+                      src={profile.avatar_url || '/assets/aistudio/image_27ab99ae.png'}
+                      alt={profile.full_name}
+                      className="w-full h-full object-cover object-top"
+                    />
+                  </div>
+                  <div className="flex-1 w-full">
+                    <label className="block text-neutral-400 mb-1">EXECUTIVE PORTRAIT / AVATAR URL</label>
+                    <input
+                      type="text"
+                      value={profile.avatar_url || ''}
+                      onChange={(e) => setProfile({ ...profile, avatar_url: e.target.value })}
+                      placeholder="/assets/aistudio/image_27ab99ae.png"
+                      className="w-full px-3.5 py-2 rounded-xl bg-white/[0.04] border border-white/10 text-white text-xs font-mono focus:border-white/30 focus:outline-none"
+                    />
+                    <div className="text-[10px] text-neutral-400 mt-1 font-mono">
+                      Foto resmi ini ditampilkan di Hero Section dan Halaman About.
+                    </div>
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-neutral-400 mb-1">HERO HEADLINE</label>
                   <input
@@ -1501,8 +1525,12 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ user, onLogout, 
 
               {/* Verified Session Card */}
               <div className="p-3 liquid-glass rounded-xl border border-white/10 text-xs font-mono flex items-center gap-3">
-                <div className="w-8 h-8 rounded-lg bg-white/10 flex items-center justify-center font-serif text-white font-bold">
-                  P
+                <div className="w-9 h-9 rounded-lg overflow-hidden bg-neutral-900 border border-white/15 shrink-0">
+                  <img
+                    src={profile?.avatar_url || '/assets/aistudio/image_27ab99ae.png'}
+                    alt="Parta Yasa"
+                    className="w-full h-full object-cover object-top"
+                  />
                 </div>
                 <div>
                   <div className="text-white font-medium">{user.email}</div>

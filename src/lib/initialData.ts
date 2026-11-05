@@ -32,7 +32,7 @@ In backend software engineering:
 • Transactional integrity and audit logs guarantee consistency across concurrent database mutations.
 
 Today, this clinical rigor shapes how I architect database schemas, design fault-tolerant API contracts, and optimize algorithms for predictable time and space bounds.`,
-  avatar_url: '',
+  avatar_url: '/assets/aistudio/image_27ab99ae.png',
   cv_url: '#contact',
   github_url: 'https://github.com/101manparta',
   linkedin_url: 'https://www.linkedin.com/in/manparta01x0/',

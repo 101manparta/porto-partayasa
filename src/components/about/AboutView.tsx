@@ -31,15 +31,45 @@ export const AboutView: React.FC<AboutViewProps> = ({ profile, onNavigate }) => 
 
       {/* Narrative Section */}
       <div className="space-y-10">
-        {/* Full Bio Card */}
+        {/* Full Bio & Portrait Card */}
         <LiquidGlassCard variant="default" className="p-6 sm:p-8">
-          <h2 className="text-xl sm:text-2xl font-serif text-white tracking-tight mb-4">
-            Professional Overview
-          </h2>
-          <div className="text-sm sm:text-base text-neutral-300 font-sans leading-relaxed space-y-4">
-            {profile.bio_full.split('\n\n').map((para, i) => (
-              <p key={i}>{para}</p>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-12 gap-8 items-start">
+            {/* Executive Portrait Badge (4 cols on md) */}
+            <div className="md:col-span-4 shrink-0 space-y-3">
+              <div className="relative group overflow-hidden rounded-2xl aspect-[3/4] bg-[#0c0c10] border border-white/10 shadow-lg">
+                <img
+                  src={profile.avatar_url || '/assets/aistudio/image_27ab99ae.png'}
+                  alt="I Nyoman Parta Yasa"
+                  className="w-full h-full object-cover object-top filter grayscale contrast-105 group-hover:grayscale-0 transition-all duration-500"
+                />
+                <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
+                <div className="absolute bottom-2.5 inset-x-2.5 text-center">
+                  <span className="text-[10px] font-mono text-neutral-300 px-2 py-0.5 rounded-full bg-black/60 backdrop-blur-sm border border-white/10">
+                    Bali, Indonesia
+                  </span>
+                </div>
+              </div>
+
+              <div className="p-3 bg-white/[0.02] border border-white/5 rounded-xl text-xs font-mono space-y-1 text-neutral-400">
+                <div className="text-white font-semibold font-serif text-sm">I Nyoman Parta Yasa</div>
+                <div>Backend Engineer</div>
+                <div className="text-[11px] text-neutral-500 pt-1 border-t border-white/5">
+                  Focus: Systems & Database Architecture
+                </div>
+              </div>
+            </div>
+
+            {/* Narrative Text (8 cols on md) */}
+            <div className="md:col-span-8 space-y-4">
+              <h2 className="text-xl sm:text-2xl font-serif text-white tracking-tight mb-2">
+                Professional Overview
+              </h2>
+              <div className="text-sm sm:text-base text-neutral-300 font-sans leading-relaxed space-y-4">
+                {profile.bio_full.split('\n\n').map((para, i) => (
+                  <p key={i}>{para}</p>
+                ))}
+              </div>
+            </div>
           </div>
         </LiquidGlassCard>
 
