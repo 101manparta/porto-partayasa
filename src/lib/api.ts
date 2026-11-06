@@ -116,19 +116,49 @@ export async function getProjects(includeDrafts = false): Promise<Project[]> {
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      let query = supabase.from('projects').select('*, images:project_images(*), documents:project_documents(*), case_study:case_studies(*)').order('display_order', { ascending: true });
+      let query = supabase.from('projects').select('*').order('display_order', { ascending: true });
       if (!includeDrafts) {
         query = query.eq('publication_status', 'published');
       }
-      const { data, error } = await query;
-      if (!error && data && data.length > 0) {
-        const formatted = data.map((p: any) => ({
-          ...p,
-          images: Array.isArray(p.images) ? p.images : [],
-          documents: Array.isArray(p.documents) ? p.documents : [],
-          case_study: Array.isArray(p.case_study) ? p.case_study[0] : p.case_study,
-        }));
-        return formatted as Project[];
+      const { data: dbProjects, error: pErr } = await query;
+
+      if (!pErr && dbProjects && dbProjects.length > 0) {
+        // Fetch all project images directly from Supabase
+        const { data: dbImages } = await supabase
+          .from('project_images')
+          .select('*')
+          .order('display_order', { ascending: true });
+
+        // Fetch all project documents directly from Supabase
+        const { data: dbDocs } = await supabase
+          .from('project_documents')
+          .select('*')
+          .order('display_order', { ascending: true });
+
+        // Fetch case studies
+        const { data: dbCaseStudies } = await supabase
+          .from('case_studies')
+          .select('*');
+
+        const enriched = dbProjects.map((p) => {
+          const projImgs = (dbImages || []).filter(
+            (img) => img.project_id === p.id || img.project_id === `proj-${p.slug}`
+          );
+          const projDocs = (dbDocs || []).filter(
+            (doc) => doc.project_id === p.id || doc.project_id === `proj-${p.slug}`
+          );
+          const cs = (dbCaseStudies || []).find(
+            (c) => c.project_id === p.id || c.project_id === `proj-${p.slug}`
+          );
+          return {
+            ...p,
+            images: projImgs,
+            documents: projDocs,
+            case_study: cs,
+          };
+        });
+
+        return enriched as Project[];
       }
     } catch (err) {
       console.warn('Supabase projects query failed, falling back to cached projects:', err);
