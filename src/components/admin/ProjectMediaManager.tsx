@@ -22,6 +22,7 @@ import {
   deleteProjectImage,
   updateProject,
 } from '../../lib/api';
+import { getSupabaseClient } from '../../lib/supabase';
 import { LiquidGlassCard, LiquidGlassButton } from '../common/LiquidGlass';
 
 interface ProjectMediaManagerProps {
@@ -215,6 +216,8 @@ export const ProjectMediaManager: React.FC<ProjectMediaManagerProps> = ({
     onRefresh();
   };
 
+  const isSupabaseConnected = Boolean(getSupabaseClient());
+
   return (
     <div className="space-y-8 max-w-6xl">
       {/* Header */}
@@ -227,23 +230,59 @@ export const ProjectMediaManager: React.FC<ProjectMediaManagerProps> = ({
           </p>
         </div>
 
-        {/* Project Filter Selector */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-neutral-400" />
-          <select
-            value={selectedProjectId}
-            onChange={(e) => setSelectedProjectId(e.target.value)}
-            className="px-3 py-1.5 rounded-xl bg-[#09090C] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-white/30"
+        {/* Status Badge & Project Filter Selector */}
+        <div className="flex flex-wrap items-center gap-3">
+          <div
+            className={`px-3 py-1 rounded-full border text-[11px] font-mono flex items-center gap-1.5 ${
+              isSupabaseConnected
+                ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300'
+                : 'bg-amber-500/10 border-amber-500/25 text-amber-300'
+            }`}
           >
-            <option value="all">All Projects ({images.length} images)</option>
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>
-                {p.name}
-              </option>
-            ))}
-          </select>
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                isSupabaseConnected ? 'bg-emerald-400' : 'bg-amber-400 animate-pulse'
+              }`}
+            />
+            <span>{isSupabaseConnected ? 'Supabase Storage: Active' : 'Mode Offline (Local Only)'}</span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4 text-neutral-400" />
+            <select
+              value={selectedProjectId}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              className="px-3 py-1.5 rounded-xl bg-[#09090C] border border-white/10 text-white font-mono text-xs focus:outline-none focus:border-white/30"
+            >
+              <option value="all">All Projects ({images.length} images)</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
       </div>
+
+      {/* Offline Warning Banner if Supabase is disconnected on Vercel */}
+      {!isSupabaseConnected && (
+        <div className="p-4 bg-amber-500/10 border border-amber-500/30 rounded-2xl flex items-start gap-3 text-xs text-amber-200">
+          <AlertCircle className="w-5 h-5 text-amber-400 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-semibold text-amber-300">
+              Peringatan: Vercel Belum Terhubung ke Supabase Cloud Storage
+            </div>
+            <p className="text-[11px] text-amber-200/90 leading-relaxed font-sans">
+              Variabel <code>VITE_SUPABASE_URL</code> dan <code>VITE_SUPABASE_ANON_KEY</code> belum ter-compile di Vercel Anda.
+              Jika Anda mengupload gambar sekarang, gambar hanya tersimpan sementara di browser ini (localStorage) dan <strong>TIDAK AKAN MUNCUL di browser/laptop/akun lain</strong>.
+            </p>
+            <p className="text-[11px] text-amber-300 font-mono pt-1">
+              Solusi: Tambahkan VITE_SUPABASE_URL & VITE_SUPABASE_ANON_KEY di dashboard Vercel &gt; Settings &gt; Environment Variables, lalu klik <strong>Redeploy</strong>.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Drag & Drop Upload Zone */}
       <LiquidGlassCard

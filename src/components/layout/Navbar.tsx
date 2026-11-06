@@ -30,7 +30,7 @@ export const Navbar: React.FC<NavbarProps> = ({
   return (
     <header className="fixed top-4 inset-x-0 z-50 px-4 sm:px-6 pointer-events-none">
       <div className="max-w-6xl mx-auto pointer-events-auto">
-        <div className="liquid-glass-elevated rounded-2xl px-5 py-3 flex items-center justify-between gap-8 transition-all duration-300">
+        <div className="liquid-glass-elevated !bg-[#07070a]/90 backdrop-blur-2xl rounded-2xl px-5 py-3 flex items-center justify-between gap-8 transition-all duration-300 shadow-2xl">
           {/* Zone 1: Brand title wordmark */}
           <button
             onClick={() => handleLinkClick('home')}
