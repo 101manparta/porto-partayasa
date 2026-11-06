@@ -64,6 +64,205 @@ function setLocalItem<T>(key: string, value: T): void {
 }
 
 // -----------------------------------------------------------------------------
+// POSTGRESQL & UUID SCHEMA RESILIENCE HELPERS
+// -----------------------------------------------------------------------------
+export function isValidUUID(val: string): boolean {
+  if (!val || typeof val !== 'string') return false;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(val.trim());
+}
+
+export function generateUUID(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
+/**
+ * Resolves a project ID against Supabase without triggering Postgres 22P02 UUID syntax errors.
+ * Supports both UUID and TEXT column types in Supabase projects.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function resolveProjectIdForSupabase(supabase: any, rawProjectId?: string): Promise<string | null> {
+  if (!rawProjectId || rawProjectId.trim() === '' || rawProjectId === 'all') {
+    return null;
+  }
+
+  const cleanSlug = rawProjectId.replace(/^proj-/, '').toLowerCase();
+
+  // 1. Search by slug (always a TEXT comparison in PostgreSQL, never throws 22P02 UUID syntax error)
+  try {
+    const { data: bySlug } = await supabase
+      .from('projects')
+      .select('id, slug')
+      .eq('slug', cleanSlug)
+      .limit(1)
+      .maybeSingle();
+
+    if (bySlug?.id) {
+      return bySlug.id;
+    }
+  } catch (err) {
+    console.warn('Lookup project by slug warning:', err);
+  }
+
+  // 2. If rawProjectId is already a valid UUID, search by id
+  if (isValidUUID(rawProjectId)) {
+    try {
+      const { data: byId } = await supabase
+        .from('projects')
+        .select('id')
+        .eq('id', rawProjectId)
+        .limit(1)
+        .maybeSingle();
+
+      if (byId?.id) {
+        return byId.id;
+      }
+    } catch (err) {
+      console.warn('Lookup project by UUID warning:', err);
+    }
+  }
+
+  // 3. Find baseline project definition
+  const baseline =
+    INITIAL_PROJECTS.find(
+      (p) => p.id === rawProjectId || p.slug.toLowerCase() === cleanSlug
+    ) || INITIAL_PROJECTS.find((p) => p.id === 'proj-mlb-icon-bali') || INITIAL_PROJECTS[0];
+
+  if (!baseline) return null;
+
+  // 4. Try upserting with text ID first (if table id is TEXT)
+  try {
+    const { data: createdText, error: textErr } = await supabase
+      .from('projects')
+      .upsert({
+        id: baseline.id,
+        name: baseline.name,
+        slug: baseline.slug,
+        short_description: baseline.short_description,
+        full_description: baseline.full_description,
+        category: baseline.category,
+        live_url: baseline.live_url,
+        github_url: baseline.github_url,
+        technologies: baseline.technologies,
+        is_featured: baseline.is_featured,
+        publication_status: baseline.publication_status,
+        display_order: baseline.display_order,
+      })
+      .select('id')
+      .maybeSingle();
+
+    if (!textErr && createdText?.id) {
+      return createdText.id;
+    }
+  } catch {
+    // If text ID rejected because id is UUID, continue to UUID fallback
+  }
+
+  // 5. Try upserting without specifying ID so PostgreSQL generates its default UUID
+  try {
+    const { data: createdWithoutId } = await supabase
+      .from('projects')
+      .upsert(
+        {
+          name: baseline.name,
+          slug: baseline.slug,
+          short_description: baseline.short_description,
+          full_description: baseline.full_description,
+          category: baseline.category,
+          live_url: baseline.live_url,
+          github_url: baseline.github_url,
+          technologies: baseline.technologies,
+          is_featured: baseline.is_featured,
+          publication_status: baseline.publication_status,
+          display_order: baseline.display_order,
+        },
+        { onConflict: 'slug' }
+      )
+      .select('id')
+      .maybeSingle();
+
+    if (createdWithoutId?.id) {
+      return createdWithoutId.id;
+    }
+  } catch {
+    // fallback
+  }
+
+  // 6. Final lookup by slug
+  try {
+    const { data: finalLookup } = await supabase
+      .from('projects')
+      .select('id')
+      .eq('slug', baseline.slug)
+      .limit(1)
+      .maybeSingle();
+
+    if (finalLookup?.id) {
+      return finalLookup.id;
+    }
+  } catch {
+    // ignore
+  }
+
+  return null;
+}
+
+/**
+ * Seeds initial baseline projects into Supabase if the projects table is empty.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function seedInitialProjectsToSupabase(supabase: any): Promise<void> {
+  if (!supabase) return;
+  for (const p of INITIAL_PROJECTS) {
+    try {
+      // Try text ID
+      const { error: err1 } = await supabase.from('projects').upsert({
+        id: p.id,
+        name: p.name,
+        slug: p.slug,
+        short_description: p.short_description,
+        full_description: p.full_description,
+        category: p.category,
+        live_url: p.live_url,
+        github_url: p.github_url,
+        technologies: p.technologies,
+        is_featured: p.is_featured,
+        publication_status: p.publication_status,
+        display_order: p.display_order,
+      });
+
+      if (err1) {
+        // If text ID rejected (e.g. column is UUID), upsert by slug omitting id
+        await supabase.from('projects').upsert(
+          {
+            name: p.name,
+            slug: p.slug,
+            short_description: p.short_description,
+            full_description: p.full_description,
+            category: p.category,
+            live_url: p.live_url,
+            github_url: p.github_url,
+            technologies: p.technologies,
+            is_featured: p.is_featured,
+            publication_status: p.publication_status,
+            display_order: p.display_order,
+          },
+          { onConflict: 'slug' }
+        );
+      }
+    } catch (err) {
+      console.warn(`Auto-seeding project ${p.slug} warning:`, err);
+    }
+  }
+}
+
+// -----------------------------------------------------------------------------
 // PROFILE API
 // -----------------------------------------------------------------------------
 export async function getProfile(): Promise<Profile> {
@@ -120,7 +319,15 @@ export async function getProjects(includeDrafts = false): Promise<Project[]> {
       if (!includeDrafts) {
         query = query.eq('publication_status', 'published');
       }
-      const { data: dbProjects, error: pErr } = await query;
+      let { data: dbProjects, error: pErr } = await query;
+
+      if (!pErr && (!dbProjects || dbProjects.length === 0)) {
+        await seedInitialProjectsToSupabase(supabase);
+        const { data: refetched } = await query;
+        if (refetched && refetched.length > 0) {
+          dbProjects = refetched;
+        }
+      }
 
       if (!pErr && dbProjects && dbProjects.length > 0) {
         // Fetch all project images directly from Supabase
@@ -405,8 +612,13 @@ export async function getProjectImages(projectId?: string, showcaseOnly = false)
   if (supabase) {
     try {
       let query = supabase.from('project_images').select('*').order('display_order', { ascending: true });
-      if (projectId) {
-        query = query.eq('project_id', projectId);
+      if (projectId && projectId !== 'all') {
+        const resolvedId = await resolveProjectIdForSupabase(supabase, projectId);
+        if (resolvedId) {
+          query = query.eq('project_id', resolvedId);
+        } else if (isValidUUID(projectId)) {
+          query = query.eq('project_id', projectId);
+        }
       }
       if (showcaseOnly) {
         query = query.eq('is_showcase', true);
@@ -423,8 +635,8 @@ export async function getProjectImages(projectId?: string, showcaseOnly = false)
   const initialImages: ProjectImage[] = INITIAL_PROJECTS.flatMap((p) => p.images || []);
   const allImages = getLocalItem<ProjectImage[]>(STORAGE_KEYS.images, initialImages);
   let filtered = allImages;
-  if (projectId) {
-    filtered = filtered.filter((img) => img.project_id === projectId);
+  if (projectId && projectId !== 'all') {
+    filtered = filtered.filter((img) => img.project_id === projectId || img.project_id.includes(projectId.replace('proj-', '')));
   }
   if (showcaseOnly) {
     filtered = filtered.filter((img) => img.is_showcase);
@@ -451,68 +663,31 @@ export async function createProjectImage(data: Partial<ProjectImage>): Promise<P
 
   const supabase = getSupabaseClient();
   if (supabase) {
-    // Check if the project exists in Supabase. If not, match by slug or ensure it exists
-    let targetProjectId = newImg.project_id;
-    const { data: matchedProj } = await supabase
-      .from('projects')
-      .select('id')
-      .or(`id.eq.${newImg.project_id},slug.eq.${newImg.project_id.replace('proj-', '')}`)
-      .limit(1)
-      .maybeSingle();
-
-    if (matchedProj) {
-      targetProjectId = matchedProj.id;
-    } else {
-      // If projects table is empty, auto-seed the baseline project so foreign key never fails
-      const baseline = INITIAL_PROJECTS.find(
-        (p) => p.id === newImg.project_id || p.slug === newImg.project_id.replace('proj-', '')
-      ) || INITIAL_PROJECTS[0];
-
-      if (baseline) {
-        const { data: createdProj, error: pCreateErr } = await supabase
-          .from('projects')
-          .upsert({
-            id: baseline.id,
-            name: baseline.name,
-            slug: baseline.slug,
-            short_description: baseline.short_description,
-            full_description: baseline.full_description,
-            category: baseline.category,
-            live_url: baseline.live_url,
-            github_url: baseline.github_url,
-            technologies: baseline.technologies,
-            is_featured: baseline.is_featured,
-            publication_status: baseline.publication_status,
-            display_order: baseline.display_order,
-          })
-          .select('id')
-          .single();
-
-        if (!pCreateErr && createdProj) {
-          targetProjectId = createdProj.id;
-        }
-      }
+    const targetProjectId = await resolveProjectIdForSupabase(supabase, newImg.project_id);
+    if (targetProjectId) {
+      newImg.project_id = targetProjectId;
     }
 
-    newImg.project_id = targetProjectId;
+    const payload: Record<string, unknown> = {
+      image_url: newImg.image_url,
+      file_path: newImg.file_path,
+      file_name: newImg.file_name,
+      mime_type: newImg.mime_type,
+      file_size: newImg.file_size,
+      title: newImg.title,
+      caption: newImg.caption,
+      image_type: newImg.image_type,
+      display_order: newImg.display_order,
+      is_showcase: newImg.is_showcase,
+    };
+
+    if (targetProjectId) {
+      payload.project_id = targetProjectId;
+    }
 
     const { data: inserted, error } = await supabase
       .from('project_images')
-      .insert([
-        {
-          project_id: targetProjectId,
-          image_url: newImg.image_url,
-          file_path: newImg.file_path,
-          file_name: newImg.file_name,
-          mime_type: newImg.mime_type,
-          file_size: newImg.file_size,
-          title: newImg.title,
-          caption: newImg.caption,
-          image_type: newImg.image_type,
-          display_order: newImg.display_order,
-          is_showcase: newImg.is_showcase,
-        },
-      ])
+      .insert([payload])
       .select()
       .single();
 
@@ -645,8 +820,13 @@ export async function getProjectDocuments(projectId?: string, includeDrafts = fa
   if (supabase) {
     try {
       let query = supabase.from('project_documents').select('*').order('display_order', { ascending: true });
-      if (projectId) {
-        query = query.eq('project_id', projectId);
+      if (projectId && projectId !== 'all') {
+        const resolvedId = await resolveProjectIdForSupabase(supabase, projectId);
+        if (resolvedId) {
+          query = query.eq('project_id', resolvedId);
+        } else if (isValidUUID(projectId)) {
+          query = query.eq('project_id', projectId);
+        }
       }
       if (!includeDrafts) {
         query = query.eq('publication_status', 'published');
@@ -662,8 +842,8 @@ export async function getProjectDocuments(projectId?: string, includeDrafts = fa
 
   const allDocs = getLocalItem<ProjectDocument[]>(STORAGE_KEYS.documents, INITIAL_DOCUMENTS);
   let filtered = allDocs;
-  if (projectId) {
-    filtered = filtered.filter((d) => d.project_id === projectId);
+  if (projectId && projectId !== 'all') {
+    filtered = filtered.filter((d) => d.project_id === projectId || d.project_id.includes(projectId.replace('proj-', '')));
   }
   if (!includeDrafts) {
     filtered = filtered.filter((d) => d.publication_status === 'published');
@@ -692,8 +872,8 @@ export async function createProjectDocument(data: Partial<ProjectDocument>): Pro
   const supabase = getSupabaseClient();
   if (supabase) {
     try {
-      const { data: inserted, error } = await supabase.from('project_documents').insert([{
-        project_id: newDoc.project_id,
+      const targetProjectId = await resolveProjectIdForSupabase(supabase, newDoc.project_id);
+      const docPayload: Record<string, unknown> = {
         title: newDoc.title,
         category: newDoc.category,
         description: newDoc.description,
@@ -704,10 +884,21 @@ export async function createProjectDocument(data: Partial<ProjectDocument>): Pro
         file_size: newDoc.file_size,
         display_order: newDoc.display_order,
         publication_status: newDoc.publication_status,
-      }]).select().single();
+      };
+      if (targetProjectId) {
+        docPayload.project_id = targetProjectId;
+        newDoc.project_id = targetProjectId;
+      }
+
+      const { data: inserted, error } = await supabase
+        .from('project_documents')
+        .insert([docPayload])
+        .select()
+        .single();
 
       if (!error && inserted) {
         newDoc.id = inserted.id;
+        newDoc.project_id = inserted.project_id;
       }
     } catch (err) {
       console.error('Supabase createProjectDocument error:', err);

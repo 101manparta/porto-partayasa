@@ -59,6 +59,7 @@ export const ProjectMediaManager: React.FC<ProjectMediaManagerProps> = ({
   const [uploadImageType, setUploadImageType] = useState<'screenshot' | 'architecture_diagram'>('screenshot');
   const [uploadIsShowcase, setUploadIsShowcase] = useState(true);
   const [copiedFixSql, setCopiedFixSql] = useState(false);
+  const [copiedDbFixSql, setCopiedDbFixSql] = useState(false);
 
   const STORAGE_RLS_FIX_SQL = `-- 1. Pastikan bucket project-images berstatus Public
 UPDATE storage.buckets SET public = true WHERE id = 'project-images';
@@ -79,6 +80,33 @@ DROP POLICY IF EXISTS "Allow delete on portfolio buckets" ON storage.objects;
 CREATE POLICY "Allow delete on portfolio buckets" ON storage.objects 
   FOR DELETE 
   USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));`;
+
+  const DATABASE_UUID_FIX_SQL = `-- 1. Lepas foreign key sementara agar kolom bisa diubah tipenya
+ALTER TABLE IF EXISTS project_images DROP CONSTRAINT IF EXISTS project_images_project_id_fkey;
+ALTER TABLE IF EXISTS project_documents DROP CONSTRAINT IF EXISTS project_documents_project_id_fkey;
+ALTER TABLE IF EXISTS case_studies DROP CONSTRAINT IF EXISTS case_studies_project_id_fkey;
+
+-- 2. Ubah tipe kolom id dan project_id menjadi TEXT
+ALTER TABLE IF EXISTS projects ALTER COLUMN id TYPE TEXT;
+ALTER TABLE IF EXISTS project_images ALTER COLUMN id TYPE TEXT;
+ALTER TABLE IF EXISTS project_images ALTER COLUMN project_id TYPE TEXT;
+ALTER TABLE IF EXISTS project_documents ALTER COLUMN id TYPE TEXT;
+ALTER TABLE IF EXISTS project_documents ALTER COLUMN project_id TYPE TEXT;
+ALTER TABLE IF EXISTS case_studies ALTER COLUMN id TYPE TEXT;
+ALTER TABLE IF EXISTS case_studies ALTER COLUMN project_id TYPE TEXT;
+
+-- 3. Pasang kembali foreign key dengan cascade delete
+ALTER TABLE IF EXISTS project_images ADD CONSTRAINT project_images_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS project_documents ADD CONSTRAINT project_documents_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+ALTER TABLE IF EXISTS case_studies ADD CONSTRAINT case_studies_project_id_fkey FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE;
+
+-- 4. Masukkan baseline 3 proyek utama Parta Yasa
+INSERT INTO projects (id, name, slug, short_description, full_description, category, live_url, github_url, technologies, is_featured, publication_status, display_order)
+VALUES 
+  ('proj-mlb-icon-bali', 'MLB ICON BALI', 'mlb-icon-bali', 'Enterprise hospitality booking & ticketing management platform with transactional inventory locking and high-throughput reservation pipelines.', 'A comprehensive commercial platform serving premier hospitality venues in Bali.', 'Enterprise Backend & Platform', 'https://mlb-pro-olive.vercel.app/', 'https://github.com/101manparta/mlb-icon-bali', ARRAY['PostgreSQL', 'TypeScript', 'Node.js', 'Redis', 'Supabase', 'Next.js', 'Tailwind CSS'], true, 'published', 1),
+  ('proj-voltra', 'VOLTRA', 'voltra', 'High-throughput telemetry ingestion & dynamic EV charging load-balancing engine built with Go concurrency and time-series rollups.', 'An industrial Internet of Things (IoT) energy dispatch orchestration platform.', 'Distributed Systems & IoT', 'https://voltra-pi.vercel.app/', 'https://github.com/101manparta/voltra', ARRAY['Go', 'TimescaleDB', 'PostgreSQL', 'Docker', 'Redis', 'WebSockets', 'Chart.js'], true, 'published', 2),
+  ('proj-mediflow', 'MEDIFLOW', 'mediflow', 'Clinical laboratory specimen lifecycle & validation engine integrating diagnostic state transitions, automated delta checks, and HL7-compliant audit logs.', 'A mission-critical healthcare backend born out of actual clinical pathology laboratory practice.', 'Healthcare Backend & State Machines', 'https://mediflow-solutions.netlify.app/', 'https://github.com/101manparta/mediflow', ARRAY['TypeScript', 'Node.js', 'PostgreSQL', 'Supabase', 'Express', 'Tailwind CSS'], true, 'published', 3)
+ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;`;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -425,7 +453,7 @@ CREATE POLICY "Allow delete on portfolio buckets" ON storage.objects
             </div>
           )}
 
-          {/* Upload Error Banner with 1-Click RLS Fix */}
+          {/* Upload Error Banner with 1-Click RLS & UUID Fix */}
           {uploadError && (
             <div className="w-full max-w-xl p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs font-mono text-red-300 space-y-3">
               <div className="flex items-start gap-2.5">
@@ -437,9 +465,15 @@ CREATE POLICY "Allow delete on portfolio buckets" ON storage.objects
                       Penyebab: Supabase Storage secara default mengunci upload file (RLS) sampai policy INSERT diberikan di database Anda.
                     </p>
                   )}
+                  {(uploadError.toLowerCase().includes('type uuid') || uploadError.toLowerCase().includes('invalid input syntax for type uuid')) && (
+                    <p className="text-[11px] text-neutral-300 font-sans leading-relaxed">
+                      Penyebab: Kolom <code>project_id</code> di tabel database Supabase Anda bertipe <code>UUID</code>, sementara tabel belum memiliki data proyek 'proj-mlb-icon-bali'.
+                    </p>
+                  )}
                 </div>
               </div>
 
+              {/* RLS Solution Section */}
               {uploadError.toLowerCase().includes('row-level security') && (
                 <div className="pt-3 border-t border-red-500/20 space-y-2.5">
                   <div className="flex items-center justify-between">
@@ -464,6 +498,35 @@ CREATE POLICY "Allow delete on portfolio buckets" ON storage.objects
                   </pre>
                   <p className="text-[10.5px] text-neutral-400 font-sans">
                     Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run. Setelah itu, upload ulang file Anda.
+                  </p>
+                </div>
+              )}
+
+              {/* UUID Type Solution Section */}
+              {(uploadError.toLowerCase().includes('type uuid') || uploadError.toLowerCase().includes('invalid input syntax for type uuid')) && (
+                <div className="pt-3 border-t border-red-500/20 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-sans text-white font-semibold flex items-center gap-1.5">
+                      <span>Solusi: Jalankan SQL ini di Supabase SQL Editor</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(DATABASE_UUID_FIX_SQL);
+                        setCopiedDbFixSql(true);
+                        setTimeout(() => setCopiedDbFixSql(false), 3000);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      {copiedDbFixSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedDbFixSql ? 'SQL Disalin!' : 'Salin SQL Fix Database'}</span>
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-black/60 rounded-xl text-[10px] text-neutral-300 overflow-x-auto border border-white/5 font-mono leading-relaxed whitespace-pre">
+                    {DATABASE_UUID_FIX_SQL}
+                  </pre>
+                  <p className="text-[10.5px] text-neutral-400 font-sans">
+                    Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run.
                   </p>
                 </div>
               )}
