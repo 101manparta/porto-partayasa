@@ -13,6 +13,8 @@ import {
   X,
   FileCheck,
   Filter,
+  Copy,
+  ExternalLink,
 } from 'lucide-react';
 import { Project, ProjectImage } from '../../types';
 import {
@@ -56,6 +58,27 @@ export const ProjectMediaManager: React.FC<ProjectMediaManagerProps> = ({
   const [uploadCaption, setUploadCaption] = useState('');
   const [uploadImageType, setUploadImageType] = useState<'screenshot' | 'architecture_diagram'>('screenshot');
   const [uploadIsShowcase, setUploadIsShowcase] = useState(true);
+  const [copiedFixSql, setCopiedFixSql] = useState(false);
+
+  const STORAGE_RLS_FIX_SQL = `-- 1. Pastikan bucket project-images berstatus Public
+UPDATE storage.buckets SET public = true WHERE id = 'project-images';
+
+-- 2. Berikan izin upload (INSERT) ke bucket project-images & dokumen
+DROP POLICY IF EXISTS "Allow uploads to portfolio buckets" ON storage.objects;
+CREATE POLICY "Allow uploads to portfolio buckets" ON storage.objects 
+  FOR INSERT 
+  WITH CHECK (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+
+-- 3. Berikan izin update dan delete
+DROP POLICY IF EXISTS "Allow update on portfolio buckets" ON storage.objects;
+CREATE POLICY "Allow update on portfolio buckets" ON storage.objects 
+  FOR UPDATE 
+  USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+
+DROP POLICY IF EXISTS "Allow delete on portfolio buckets" ON storage.objects;
+CREATE POLICY "Allow delete on portfolio buckets" ON storage.objects 
+  FOR DELETE 
+  USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));`;
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -402,11 +425,48 @@ export const ProjectMediaManager: React.FC<ProjectMediaManagerProps> = ({
             </div>
           )}
 
-          {/* Upload Error Banner */}
+          {/* Upload Error Banner with 1-Click RLS Fix */}
           {uploadError && (
-            <div className="w-full max-w-md p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs font-mono text-red-300 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 shrink-0" />
-              <span>{uploadError}</span>
+            <div className="w-full max-w-xl p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs font-mono text-red-300 space-y-3">
+              <div className="flex items-start gap-2.5">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                <div className="flex-1 space-y-1">
+                  <p className="font-semibold text-red-200">{uploadError}</p>
+                  {uploadError.toLowerCase().includes('row-level security') && (
+                    <p className="text-[11px] text-neutral-300 font-sans leading-relaxed">
+                      Penyebab: Supabase Storage secara default mengunci upload file (RLS) sampai policy INSERT diberikan di database Anda.
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {uploadError.toLowerCase().includes('row-level security') && (
+                <div className="pt-3 border-t border-red-500/20 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-sans text-white font-semibold flex items-center gap-1.5">
+                      <span>Solusi: Jalankan SQL ini di Supabase SQL Editor</span>
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        navigator.clipboard.writeText(STORAGE_RLS_FIX_SQL);
+                        setCopiedFixSql(true);
+                        setTimeout(() => setCopiedFixSql(false), 3000);
+                      }}
+                      className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                    >
+                      {copiedFixSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedFixSql ? 'SQL Disalin!' : 'Salin SQL Fix'}</span>
+                    </button>
+                  </div>
+                  <pre className="p-3 bg-black/60 rounded-xl text-[10.5px] text-neutral-300 overflow-x-auto border border-white/5 font-mono leading-relaxed whitespace-pre">
+                    {STORAGE_RLS_FIX_SQL}
+                  </pre>
+                  <p className="text-[10.5px] text-neutral-400 font-sans">
+                    Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run. Setelah itu, upload ulang file Anda.
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>

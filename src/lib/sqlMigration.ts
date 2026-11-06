@@ -381,13 +381,13 @@ CREATE POLICY "Public read storage objects" ON storage.objects
   FOR SELECT USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
 
 CREATE POLICY "Admin upload storage objects" ON storage.objects 
-  FOR INSERT TO authenticated WITH CHECK (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+  FOR INSERT WITH CHECK (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
 
 CREATE POLICY "Admin update storage objects" ON storage.objects 
-  FOR UPDATE TO authenticated USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+  FOR UPDATE USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
 
 CREATE POLICY "Admin delete storage objects" ON storage.objects 
-  FOR DELETE TO authenticated USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
+  FOR DELETE USING (bucket_id IN ('project-images', 'engineering-documents', 'achievement-certificates', 'certification-files', 'profile-assets'));
 
 -- ==============================================================================
 -- 16. BASELINE SEED DATA
