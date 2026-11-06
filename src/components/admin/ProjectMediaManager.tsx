@@ -60,6 +60,37 @@ export const ProjectMediaManager: React.FC<ProjectMediaManagerProps> = ({
   const [uploadIsShowcase, setUploadIsShowcase] = useState(true);
   const [copiedFixSql, setCopiedFixSql] = useState(false);
   const [copiedDbFixSql, setCopiedDbFixSql] = useState(false);
+  const [copiedTableRlsFixSql, setCopiedTableRlsFixSql] = useState(false);
+
+  const TABLE_RLS_FIX_SQL = `-- 1. Izinkan simpan & baca pada tabel project_images
+ALTER TABLE IF EXISTS project_images ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on project_images" ON project_images;
+DROP POLICY IF EXISTS "Public project_images read" ON project_images;
+DROP POLICY IF EXISTS "Admin project_images all" ON project_images;
+CREATE POLICY "Allow all on project_images" ON project_images 
+  FOR ALL 
+  USING (true) 
+  WITH CHECK (true);
+
+-- 2. Izinkan simpan & baca pada tabel projects
+ALTER TABLE IF EXISTS projects ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on projects" ON projects;
+DROP POLICY IF EXISTS "Public projects read" ON projects;
+DROP POLICY IF EXISTS "Admin projects all" ON projects;
+CREATE POLICY "Allow all on projects" ON projects 
+  FOR ALL 
+  USING (true) 
+  WITH CHECK (true);
+
+-- 3. Izinkan simpan & baca pada tabel project_documents
+ALTER TABLE IF EXISTS project_documents ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Allow all on project_documents" ON project_documents;
+DROP POLICY IF EXISTS "Public project_documents read" ON project_documents;
+DROP POLICY IF EXISTS "Admin project_documents all" ON project_documents;
+CREATE POLICY "Allow all on project_documents" ON project_documents 
+  FOR ALL 
+  USING (true) 
+  WITH CHECK (true);`;
 
   const STORAGE_RLS_FIX_SQL = `-- 1. Pastikan bucket project-images berstatus Public
 UPDATE storage.buckets SET public = true WHERE id = 'project-images';
@@ -454,84 +485,124 @@ ON CONFLICT (id) DO UPDATE SET name = EXCLUDED.name, slug = EXCLUDED.slug;`;
           )}
 
           {/* Upload Error Banner with 1-Click RLS & UUID Fix */}
-          {uploadError && (
-            <div className="w-full max-w-xl p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs font-mono text-red-300 space-y-3">
-              <div className="flex items-start gap-2.5">
-                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
-                <div className="flex-1 space-y-1">
-                  <p className="font-semibold text-red-200">{uploadError}</p>
-                  {uploadError.toLowerCase().includes('row-level security') && (
-                    <p className="text-[11px] text-neutral-300 font-sans leading-relaxed">
-                      Penyebab: Supabase Storage secara default mengunci upload file (RLS) sampai policy INSERT diberikan di database Anda.
-                    </p>
-                  )}
-                  {(uploadError.toLowerCase().includes('type uuid') || uploadError.toLowerCase().includes('invalid input syntax for type uuid')) && (
-                    <p className="text-[11px] text-neutral-300 font-sans leading-relaxed">
-                      Penyebab: Kolom <code>project_id</code> di tabel database Supabase Anda bertipe <code>UUID</code>, sementara tabel belum memiliki data proyek 'proj-mlb-icon-bali'.
-                    </p>
-                  )}
+          {uploadError && (() => {
+            const isTableRlsError = uploadError.toLowerCase().includes('table "project_images"') || uploadError.toLowerCase().includes('table "projects"');
+            const isStorageRlsError = !isTableRlsError && uploadError.toLowerCase().includes('row-level security');
+            const isUuidError = uploadError.toLowerCase().includes('type uuid') || uploadError.toLowerCase().includes('invalid input syntax for type uuid');
+
+            return (
+              <div className="w-full max-w-xl p-4 bg-red-500/10 border border-red-500/30 rounded-2xl text-xs font-mono text-red-300 space-y-3">
+                <div className="flex items-start gap-2.5">
+                  <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-red-400" />
+                  <div className="flex-1 space-y-1">
+                    <p className="font-semibold text-red-200">{uploadError}</p>
+                    {isTableRlsError && (
+                      <p className="text-[11px] text-neutral-300 font-sans leading-relaxed">
+                        Penyebab: File berhasil diunggah ke Storage, namun tabel database PostgreSQL <code>project_images</code> belum memiliki policy INSERT.
+                      </p>
+                    )}
+                    {isStorageRlsError && (
+                      <p className="text-[11px] text-neutral-300 font-sans leading-relaxed">
+                        Penyebab: Supabase Storage secara default mengunci upload file (RLS) sampai policy INSERT diberikan di database Anda.
+                      </p>
+                    )}
+                    {isUuidError && (
+                      <p className="text-[11px] text-neutral-300 font-sans leading-relaxed">
+                        Penyebab: Kolom <code>project_id</code> di tabel database Supabase Anda bertipe <code>UUID</code>, sementara tabel belum memiliki data proyek 'proj-mlb-icon-bali'.
+                      </p>
+                    )}
+                  </div>
                 </div>
+
+                {/* Table RLS Solution Section */}
+                {isTableRlsError && (
+                  <div className="pt-3 border-t border-red-500/20 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-sans text-white font-semibold flex items-center gap-1.5">
+                        <span>Solusi: Jalankan SQL ini di Supabase SQL Editor</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(TABLE_RLS_FIX_SQL);
+                          setCopiedTableRlsFixSql(true);
+                          setTimeout(() => setCopiedTableRlsFixSql(false), 3000);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        {copiedTableRlsFixSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedTableRlsFixSql ? 'SQL Disalin!' : 'Salin SQL Fix Tabel project_images'}</span>
+                      </button>
+                    </div>
+                    <pre className="p-3 bg-black/60 rounded-xl text-[10px] text-neutral-300 overflow-x-auto border border-white/5 font-mono leading-relaxed whitespace-pre">
+                      {TABLE_RLS_FIX_SQL}
+                    </pre>
+                    <p className="text-[10.5px] text-neutral-400 font-sans">
+                      Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run. Setelah itu, upload ulang file Anda.
+                    </p>
+                  </div>
+                )}
+
+                {/* Storage RLS Solution Section */}
+                {isStorageRlsError && (
+                  <div className="pt-3 border-t border-red-500/20 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-sans text-white font-semibold flex items-center gap-1.5">
+                        <span>Solusi: Jalankan SQL ini di Supabase SQL Editor</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(STORAGE_RLS_FIX_SQL);
+                          setCopiedFixSql(true);
+                          setTimeout(() => setCopiedFixSql(false), 3000);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        {copiedFixSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedFixSql ? 'SQL Disalin!' : 'Salin SQL Fix Storage'}</span>
+                      </button>
+                    </div>
+                    <pre className="p-3 bg-black/60 rounded-xl text-[10.5px] text-neutral-300 overflow-x-auto border border-white/5 font-mono leading-relaxed whitespace-pre">
+                      {STORAGE_RLS_FIX_SQL}
+                    </pre>
+                    <p className="text-[10.5px] text-neutral-400 font-sans">
+                      Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run. Setelah itu, upload ulang file Anda.
+                    </p>
+                  </div>
+                )}
+
+                {/* UUID Type Solution Section */}
+                {isUuidError && (
+                  <div className="pt-3 border-t border-red-500/20 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-sans text-white font-semibold flex items-center gap-1.5">
+                        <span>Solusi: Jalankan SQL ini di Supabase SQL Editor</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          navigator.clipboard.writeText(DATABASE_UUID_FIX_SQL);
+                          setCopiedDbFixSql(true);
+                          setTimeout(() => setCopiedDbFixSql(false), 3000);
+                        }}
+                        className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
+                      >
+                        {copiedDbFixSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                        <span>{copiedDbFixSql ? 'SQL Disalin!' : 'Salin SQL Fix Database'}</span>
+                      </button>
+                    </div>
+                    <pre className="p-3 bg-black/60 rounded-xl text-[10px] text-neutral-300 overflow-x-auto border border-white/5 font-mono leading-relaxed whitespace-pre">
+                      {DATABASE_UUID_FIX_SQL}
+                    </pre>
+                    <p className="text-[10.5px] text-neutral-400 font-sans">
+                      Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run.
+                    </p>
+                  </div>
+                )}
               </div>
-
-              {/* RLS Solution Section */}
-              {uploadError.toLowerCase().includes('row-level security') && (
-                <div className="pt-3 border-t border-red-500/20 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-sans text-white font-semibold flex items-center gap-1.5">
-                      <span>Solusi: Jalankan SQL ini di Supabase SQL Editor</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(STORAGE_RLS_FIX_SQL);
-                        setCopiedFixSql(true);
-                        setTimeout(() => setCopiedFixSql(false), 3000);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      {copiedFixSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedFixSql ? 'SQL Disalin!' : 'Salin SQL Fix'}</span>
-                    </button>
-                  </div>
-                  <pre className="p-3 bg-black/60 rounded-xl text-[10.5px] text-neutral-300 overflow-x-auto border border-white/5 font-mono leading-relaxed whitespace-pre">
-                    {STORAGE_RLS_FIX_SQL}
-                  </pre>
-                  <p className="text-[10.5px] text-neutral-400 font-sans">
-                    Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run. Setelah itu, upload ulang file Anda.
-                  </p>
-                </div>
-              )}
-
-              {/* UUID Type Solution Section */}
-              {(uploadError.toLowerCase().includes('type uuid') || uploadError.toLowerCase().includes('invalid input syntax for type uuid')) && (
-                <div className="pt-3 border-t border-red-500/20 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-sans text-white font-semibold flex items-center gap-1.5">
-                      <span>Solusi: Jalankan SQL ini di Supabase SQL Editor</span>
-                    </span>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        navigator.clipboard.writeText(DATABASE_UUID_FIX_SQL);
-                        setCopiedDbFixSql(true);
-                        setTimeout(() => setCopiedDbFixSql(false), 3000);
-                      }}
-                      className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 text-white text-[11px] font-sans font-medium flex items-center gap-1.5 transition-colors cursor-pointer"
-                    >
-                      {copiedDbFixSql ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
-                      <span>{copiedDbFixSql ? 'SQL Disalin!' : 'Salin SQL Fix Database'}</span>
-                    </button>
-                  </div>
-                  <pre className="p-3 bg-black/60 rounded-xl text-[10px] text-neutral-300 overflow-x-auto border border-white/5 font-mono leading-relaxed whitespace-pre">
-                    {DATABASE_UUID_FIX_SQL}
-                  </pre>
-                  <p className="text-[10.5px] text-neutral-400 font-sans">
-                    Langkah: Buka Supabase Dashboard &gt; SQL Editor &gt; Paste SQL di atas &gt; Klik Run.
-                  </p>
-                </div>
-              )}
-            </div>
-          )}
+            );
+          })()}
         </div>
       </LiquidGlassCard>
 
